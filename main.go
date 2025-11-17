@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bytes"
-	"fmt"
+	"context"
 	"log"
-	"math"
+	"os"
 	"time"
 
-	"github.com/gorilla/websocket"
-	"github.com/vmihailenco/msgpack/v5"
+	"github.com/joho/godotenv"
 )
 
 var wsURL = "ws://185.7.81.99:4010"
@@ -84,70 +82,151 @@ func toPairExchange(arr []interface{}) PairExchange {
 }
 
 func main() {
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	// Load environment variables from .env file
+	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("WebSocket dial error:", err)
+		log.Println("⚠️  No .env file found, using default values")
 	}
-	defer conn.Close()
 
-	conn.SetReadLimit(1 << 20)
+	// Get API credentials from environment or use test mode
+	apiKey := os.Getenv("BINANCE_API_KEY")
+	apiSecret := os.Getenv("BINANCE_API_SECRET")
 
-	for {
-		_, data, err := conn.ReadMessage()
-		if err != nil {
-			log.Println("Read error:", err)
-			break
-		}
-
-		var parsed map[string]interface{}
-		if err := msgpack.NewDecoder(bytes.NewReader(data)).Decode(&parsed); err != nil {
-			log.Println("Decode error:", err)
-			continue
-		}
-
-		for pairName, val := range parsed {
-			if len(pairName) > 5 && pairName[len(pairName)-5:] == "-perp" {
-				continue
-			}
-
-			spotMap := val.(map[string]interface{})
-			perpMapRaw, ok := parsed[pairName+"-perp"]
-			if !ok {
-				continue
-			}
-			perpMap := perpMapRaw.(map[string]interface{})
-
-			for ex1, v1 := range spotMap {
-				p1 := toPairExchange(v1.([]interface{}))
-				for ex2, v2 := range perpMap {
-					if ex1 == ex2 {
-						continue
-					}
-					p2 := toPairExchange(v2.([]interface{}))
-
-					high := math.Max(p1.Price, p2.Price)
-					low := math.Min(p1.Price, p2.Price)
-					if low == 0 {
-						continue
-					}
-					diff := ((high - low) / low) * 100.0
-					threshold := arbitrageThresholds[pairName] / riskCoef
-
-					if diff >= threshold {
-						r1 := getReliability(p1)
-						r2 := getReliability(p2)
-						if r1 > Low && r2 > Low {
-							buyEx := ex1
-							sellEx := ex2
-							if p1.Price > p2.Price {
-								buyEx, sellEx = ex2, ex1
-							}
-							fmt.Printf("Arbitrage opportunity (%s): Buy on %s at %.5f, Sell on %s at %.5f, Diff: %.2f%%\n",
-								pairName, buyEx, low, sellEx, high, diff)
-						}
-					}
-				}
-			}
-		}
+	if apiKey == "" || apiSecret == "" {
+		log.Println("⚠️  WARNING: BINANCE_API_KEY or BINANCE_API_SECRET not set in environment")
+		log.Println("⚠️  Using placeholder credentials - API calls will fail")
+		apiKey = "your-api-key"
+		apiSecret = "your-api-secret"
 	}
+
+	// Initialize Binance client
+	ctx := context.Background()
+	binanceClient := NewBinanceClient(apiKey, apiSecret)
+
+	// Test parameters
+	pairName := "blur-usdt"
+	amountUSDT := 10.0
+
+	// Step 1: Open spot long position
+	log.Println("[BINANCE] ▶️  Step 1: Opening Spot Long Position...")
+	_, err = binanceClient.PutSpotLong(ctx, pairName, amountUSDT)
+	if err != nil {
+		log.Printf("❌ Failed to open spot long: %v", err)
+		log.Println("💡 Make sure your API keys are correct and have trading permissions")
+		return
+	}
+
+	// // Step 2: Open futures short position
+	log.Println("[BINANCE] ▶️  Step 2: Opening Futures Short Position...")
+	_, err = binanceClient.PutFuturesShort(ctx, pairName, amountUSDT)
+	if err != nil {
+		log.Printf("❌ Failed to open futures short: %v", err)
+		log.Println("⚠️  Attempting to close spot position to avoid risk...")
+
+		// Try to close the spot position
+		// if closeResult, closeErr := binanceClient.CloseSpotLong(ctx, pairName); closeErr != nil {
+		// 	log.Printf("❌ Failed to close spot position: %v", closeErr)
+		// 	log.Println("⚠️  MANUAL INTERVENTION REQUIRED - You have an open spot position!")
+		// } else {
+		// 	log.Printf("✅ Spot position closed: %s", closeResult.Message)
+		// }
+		return
+	}
+
+	// // Close spot long
+	log.Println("[BINANCE] ▶️  Step 3: Closing Spot Long Position...")
+	_, err = binanceClient.CloseSpotLong(ctx, pairName)
+	if err != nil {
+		log.Printf("❌ Failed to close spot long: %v", err)
+	}
+
+	// // Close futures short
+	log.Println("[BINANCE] ▶️  Step 4: Closing Futures Short Position...")
+	_, err = binanceClient.CloseFuturesShort(ctx, pairName)
+	if err != nil {
+		log.Printf("❌ Failed to close futures short: %v", err)
+	}
+
+	// log.Println()
+	// log.Println("==========================================================")
+	// log.Println("🎉 Arbitrage Cycle Completed!")
+	// log.Println("==========================================================")
+
+	// Note: The websocket arbitrage detection code is commented out below
+	// Uncomment when you want to integrate with the live price feed
+
+	// conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	// if err != nil {
+	// 	log.Fatal("WebSocket dial error:", err)
+	// }
+	// defer conn.Close()
+
+	// conn.SetReadLimit(1 << 20)
+
+	// for {
+	// 	_, data, err := conn.ReadMessage()
+	// 	if err != nil {
+	// 		log.Println("Read error:", err)
+	// 		break
+	// 	}
+
+	// 	var parsed map[string]interface{}
+	// 	if err := msgpack.NewDecoder(bytes.NewReader(data)).Decode(&parsed); err != nil {
+	// 		log.Println("Decode error:", err)
+	// 		continue
+	// 	}
+
+	// 	for pairName, val := range parsed {
+	// 		if len(pairName) > 5 && pairName[len(pairName)-5:] == "-perp" {
+	// 			continue
+	// 		}
+
+	// 		spotMap := val.(map[string]interface{})
+	// 		perpMapRaw, ok := parsed[pairName+"-perp"]
+	// 		if !ok {
+	// 			continue
+	// 		}
+	// 		perpMap := perpMapRaw.(map[string]interface{})
+
+	// 		for ex1, v1 := range spotMap {
+	// 			p1 := toPairExchange(v1.([]interface{}))
+	// 			for ex2, v2 := range perpMap {
+	// 				if ex1 == ex2 {
+	// 					continue
+	// 				}
+	// 				p2 := toPairExchange(v2.([]interface{}))
+
+	// 				high := math.Max(p1.Price, p2.Price)
+	// 				low := math.Min(p1.Price, p2.Price)
+	// 				if low == 0 {
+	// 					continue
+	// 				}
+	// 				diff := ((high - low) / low) * 100.0
+	// 				threshold := arbitrageThresholds[pairName] / riskCoef
+
+	// 				if diff >= threshold {
+	// 					r1 := getReliability(p1)
+	// 					r2 := getReliability(p2)
+	// 					if r1 > Low && r2 > Low {
+	// 						buyEx := ex1
+	// 						sellEx := ex2
+	// 						if p1.Price > p2.Price {
+	// 							buyEx, sellEx = ex2, ex1
+	// 						}
+
+	// 						fmt.Println("---------------------")
+	// 						fmt.Printf("Short on - %s (%f)\n", sellEx, low)
+	// 						fmt.Printf("Buy on   - %s (%f)\n", buyEx, high)
+	// 						fmt.Printf("Pair     - %s \n", pairName)
+	// 						fmt.Printf("Diff     - %.2f%% \n", diff)
+	// 						// if (buyEx == "whitebit" && sellEx == "bitget") || (buyEx == "bitget" && sellEx == "whitebit") {
+	// 						// fmt.Printf("Arbitrage opportunity (%s): Buy on %s at %f, Sell on %s at %f, Diff: %.2f%% %s \n",
+	// 						// pairName, buyEx, low, sellEx, high, diff, time.Now().Format("20060102150405"))
+	// 						// }
+	// 					}
+	// 				}
+	// 			}
+	// 		}
+	// 	}
+	// }
 }
