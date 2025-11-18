@@ -5,6 +5,13 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+)
+
+var (
+	// Singleton clients - reuse the same instance to maintain position state
+	clientInstances = make(map[ExchangeType]ExchangeTradeClient)
+	clientMutex     sync.RWMutex
 )
 
 var exchangeRegistry = map[ExchangeType]func(string, string) ExchangeTradeClient{
@@ -17,12 +24,27 @@ var exchangeRegistry = map[ExchangeType]func(string, string) ExchangeTradeClient
 	},
 }
 
-func Execute(ctx context.Context, exchange ExchangeType, command OrderType, pairName string, amountUSDT float64) error {
-	fmt.Printf("[%s] |%s| - Starting\n", exchange, command)
+// getOrCreateClient returns a singleton client instance for the given exchange
+func getOrCreateClient(exchange ExchangeType) (ExchangeTradeClient, error) {
+	clientMutex.RLock()
+	if client, exists := clientInstances[exchange]; exists {
+		clientMutex.RUnlock()
+		return client, nil
+	}
+	clientMutex.RUnlock()
+
+	// Need to create new client
+	clientMutex.Lock()
+	defer clientMutex.Unlock()
+
+	// Double-check after acquiring write lock
+	if client, exists := clientInstances[exchange]; exists {
+		return client, nil
+	}
 
 	constructor, ok := exchangeRegistry[exchange]
 	if !ok {
-		return fmt.Errorf("unknown exchange: %s", exchange)
+		return nil, fmt.Errorf("unknown exchange: %s", exchange)
 	}
 
 	keyEnv := fmt.Sprintf("%s_API_KEY", strings.ToUpper(string(exchange)))
@@ -32,12 +54,21 @@ func Execute(ctx context.Context, exchange ExchangeType, command OrderType, pair
 	apiSecret := os.Getenv(secretEnv)
 
 	if apiKey == "" || apiSecret == "" {
-		return fmt.Errorf("missing API credentials for %s", exchange)
+		return nil, fmt.Errorf("missing API credentials for %s", exchange)
 	}
 
 	client := constructor(apiKey, apiSecret)
+	clientInstances[exchange] = client
+	return client, nil
+}
 
-	var err error
+func Execute(ctx context.Context, exchange ExchangeType, command OrderType, pairName string, amountUSDT float64) error {
+	fmt.Printf("[%s] |%s| - Starting\n", exchange, command)
+
+	client, err := getOrCreateClient(exchange)
+	if err != nil {
+		return err
+	}
 
 	switch command {
 	case PutSpotLong:

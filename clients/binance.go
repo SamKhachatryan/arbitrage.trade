@@ -56,13 +56,13 @@ func (b *BinanceClient) PutSpotLong(ctx context.Context, pairName string, amount
 		log.Printf("[BINANCE] PutSpotLong - ERROR: Failed to get spot price: %v", err)
 		return nil, fmt.Errorf("failed to get spot price: %w", err)
 	}
-	// Note: quantity is calculated but we use quoteOrderQty to buy with exact USDT amount
-	// Place market buy order
+
+	// Place market buy order using quoteOrderQty (USDT amount)
 	params := url.Values{}
 	params.Set("symbol", symbol)
 	params.Set("side", "BUY")
 	params.Set("type", "MARKET")
-	params.Set("quoteOrderQty", fmt.Sprintf("%.8f", amountUSDT)) // Buy with USDT amount
+	params.Set("quoteOrderQty", fmt.Sprintf("%.8f", amountUSDT))
 	params.Set("timestamp", strconv.FormatInt(time.Now().UnixMilli(), 10))
 
 	var orderResp struct {
@@ -71,9 +71,10 @@ func (b *BinanceClient) PutSpotLong(ctx context.Context, pairName string, amount
 		CummulativeQuoteQty string `json:"cummulativeQuoteQty"`
 		Status              string `json:"status"`
 		Fills               []struct {
-			Price      string `json:"price"`
-			Qty        string `json:"qty"`
-			Commission string `json:"commission"`
+			Price           string `json:"price"`
+			Qty             string `json:"qty"`
+			Commission      string `json:"commission"`
+			CommissionAsset string `json:"commissionAsset"`
 		} `json:"fills"`
 	}
 
@@ -83,19 +84,44 @@ func (b *BinanceClient) PutSpotLong(ctx context.Context, pairName string, amount
 		return nil, fmt.Errorf("spot buy order failed: %w", err)
 	}
 
-	// Use CummulativeQuoteQty which is the actual USDT spent
-	actualUSDTSpent, _ := strconv.ParseFloat(orderResp.CummulativeQuoteQty, 64)
+	// CummulativeQuoteQty is the GROSS quote amount traded (before fee in quote asset)
+	grossUSDTTraded, _ := strconv.ParseFloat(orderResp.CummulativeQuoteQty, 64)
 	execQty, _ := strconv.ParseFloat(orderResp.ExecutedQty, 64)
 
-	// Calculate average price and total fee
-	var totalFee float64
-	for _, fill := range orderResp.Fills {
-		fee, _ := strconv.ParseFloat(fill.Commission, 64)
-		totalFee += fee
-	}
-	avgPrice := actualUSDTSpent / execQty
+	// Calculate total fees and convert to USDT equivalent
+	var totalFeeInUSDT float64
+	var totalFeeInOtherAsset float64
+	var feeAsset string
 
-	// Store position
+	log.Printf("[BINANCE] PutSpotLong - Analyzing %d fills:", len(orderResp.Fills))
+	for i, fill := range orderResp.Fills {
+		fee, _ := strconv.ParseFloat(fill.Commission, 64)
+		price, _ := strconv.ParseFloat(fill.Price, 64)
+		qty, _ := strconv.ParseFloat(fill.Qty, 64)
+
+		log.Printf("[BINANCE] PutSpotLong - Fill #%d: qty=%.8f, price=%.8f, fee=%.8f %s",
+			i+1, qty, price, fee, fill.CommissionAsset)
+
+		if fill.CommissionAsset == "USDT" {
+			totalFeeInUSDT += fee
+		} else {
+			// Fee is in base asset (e.g., DOGE), convert to USDT at fill price
+			totalFeeInOtherAsset += fee
+			totalFeeInUSDT += fee * price // Convert fee to USDT equivalent
+		}
+		feeAsset = fill.CommissionAsset
+	}
+
+	// Actual USDT cost = gross traded + all fees in USDT equivalent
+	actualUSDTSpent := grossUSDTTraded + totalFeeInUSDT
+
+	// Avg price is based on traded notional (gross), fees do not change price
+	avgPrice := grossUSDTTraded / execQty
+
+	log.Printf("[BINANCE] PutSpotLong - SUMMARY: Spent %.6f USDT (gross %.6f + fee %.6f USDT-equiv from %.8f %s), bought %.8f %s (avg price: %.8f)",
+		actualUSDTSpent, grossUSDTTraded, totalFeeInUSDT, totalFeeInOtherAsset, feeAsset, execQty, b.getBaseAsset(pairName), avgPrice)
+
+	// Store position with REAL USDT spent
 	b.posMutex.Lock()
 	b.positions[pairName+"_spot"] = &Position{
 		PairName:     pairName,
@@ -103,19 +129,18 @@ func (b *BinanceClient) PutSpotLong(ctx context.Context, pairName string, amount
 		Market:       "spot",
 		EntryPrice:   avgPrice,
 		Quantity:     execQty,
-		AmountUSDT:   actualUSDTSpent, // Store actual USDT spent from CummulativeQuoteQty
+		AmountUSDT:   actualUSDTSpent, // <-- REAL USDT balance change on open
 		OrderID:      strconv.FormatInt(orderResp.OrderID, 10),
 		ExchangeName: b.GetName(),
 	}
 	b.posMutex.Unlock()
 
-	log.Printf("[BINANCE] PutSpotLong - Spent: %.6f USDT (bought %.8f %s, fee: %.8f in asset)", actualUSDTSpent, execQty, b.getBaseAsset(pairName), totalFee)
-
+	// For TradeResult.Fee we return the fee in USDT equivalent
 	return &TradeResult{
 		OrderID:       strconv.FormatInt(orderResp.OrderID, 10),
 		ExecutedPrice: avgPrice,
 		ExecutedQty:   execQty,
-		Fee:           totalFee,
+		Fee:           totalFeeInUSDT,
 		Success:       orderResp.Status == "FILLED",
 		Message:       fmt.Sprintf("Spot long opened: bought %.8f at %.8f", execQty, avgPrice),
 	}, nil
@@ -184,16 +209,17 @@ func (b *BinanceClient) PutFuturesShort(ctx context.Context, pairName string, am
 }
 
 type Fill struct {
-	Price      string
-	Qty        string
-	Commission string
+	Price           string `json:"price"`
+	Qty             string `json:"qty"`
+	Commission      string `json:"commission"`
+	CommissionAsset string `json:"commissionAsset"`
 }
 
 // CloseSpotLong sells the asset back to USDT
 func (b *BinanceClient) CloseSpotLong(ctx context.Context, pairName string, amountUSDT float64) (*TradeResult, error) {
 	symbol := b.normalizePairName(pairName, false)
 
-	// Extract base asset from symbol (e.g., "BTCUSDT" -> "BTC")
+	// Extract base asset from pair name (e.g., "btc-usdt" -> "BTC")
 	baseAsset := b.getBaseAsset(pairName)
 
 	// Get actual balance from Binance API
@@ -213,23 +239,27 @@ func (b *BinanceClient) CloseSpotLong(ctx context.Context, pairName string, amou
 	}
 
 	closeQuantity := RoundQuantity(balance, pairName)
-
 	if closeQuantity <= 0 {
 		log.Printf("[BINANCE] CloseSpotLong - ERROR: Calculated quantity is zero or negative: %.8f", closeQuantity)
 		return nil, fmt.Errorf("invalid close quantity: %.8f", closeQuantity)
 	}
 
-	// Store entry price from local tracking for PnL calculation
+	// Store entry data from local tracking for PnL calculation
 	var entryPrice float64
 	var buySpent float64
 	b.posMutex.RLock()
 	if position, exists := b.positions[pairName+"_spot"]; exists {
 		entryPrice = position.EntryPrice
-		buySpent = position.AmountUSDT // Actual USDT spent on buy
+		buySpent = position.AmountUSDT // REAL USDT spent (open) from fixed PutSpotLong
+		log.Printf("[BINANCE] CloseSpotLong - Found position in memory: EntryPrice=%.8f, BuySpent=%.6f USDT", entryPrice, buySpent)
 	} else {
-		// Fallback to parameter if position not in memory
+		// Fallback if position not in memory (still not perfect if you pass original amountUSDT instead of real one)
 		buySpent = amountUSDT
-		log.Printf("[BINANCE] CloseSpotLong - WARNING: Position not found in memory, using parameter amountUSDT: %.6f", amountUSDT)
+		log.Printf("[BINANCE] CloseSpotLong - WARNING: Position not found in memory for key '%s', using parameter amountUSDT: %.6f", pairName+"_spot", amountUSDT)
+		log.Printf("[BINANCE] CloseSpotLong - Available positions in memory: %d", len(b.positions))
+		for key := range b.positions {
+			log.Printf("[BINANCE] CloseSpotLong - Position key: '%s'", key)
+		}
 	}
 	b.posMutex.RUnlock()
 
@@ -255,32 +285,61 @@ func (b *BinanceClient) CloseSpotLong(ctx context.Context, pairName string, amou
 		return nil, fmt.Errorf("spot close order failed: %w", err)
 	}
 
-	// Use CummulativeQuoteQty which is the actual USDT received
-	actualUSDTReceived, _ := strconv.ParseFloat(orderResp.CummulativeQuoteQty, 64)
+	// CummulativeQuoteQty is GROSS quote asset received
+	grossUSDTReceived, _ := strconv.ParseFloat(orderResp.CummulativeQuoteQty, 64)
 	execQty, _ := strconv.ParseFloat(orderResp.ExecutedQty, 64)
 
-	// Calculate total fee (in USDT on sell side)
-	var totalFee float64
-	for _, fill := range orderResp.Fills {
+	// Calculate total fee and convert to USDT equivalent
+	var totalFeeInUSDT float64
+	var totalFeeInOtherAsset float64
+	var feeAssets []string
+
+	log.Printf("[BINANCE] CloseSpotLong - Analyzing %d fills:", len(orderResp.Fills))
+	for i, fill := range orderResp.Fills {
 		fee, _ := strconv.ParseFloat(fill.Commission, 64)
-		totalFee += fee
+		price, _ := strconv.ParseFloat(fill.Price, 64)
+		qty, _ := strconv.ParseFloat(fill.Qty, 64)
+
+		log.Printf("[BINANCE] CloseSpotLong - Fill #%d: qty=%.8f, price=%.8f, fee=%.8f %s",
+			i+1, qty, price, fee, fill.CommissionAsset)
+
+		if fill.CommissionAsset == "USDT" {
+			totalFeeInUSDT += fee
+		} else {
+			// Fee is in other asset (e.g., BNB), need to handle appropriately
+			// For sell orders, if fee is in BNB, it doesn't affect USDT received
+			// But for profit calculation, we should note it
+			totalFeeInOtherAsset += fee
+			feeAssets = append(feeAssets, fill.CommissionAsset)
+		}
 	}
 
-	// Net USDT received = CummulativeQuoteQty - fees
-	netSell := actualUSDTReceived - totalFee
+	// Net USDT received (only subtract if fee was in USDT)
+	netSell := grossUSDTReceived - totalFeeInUSDT
+
+	if totalFeeInUSDT > 0 {
+		log.Printf("[BINANCE] CloseSpotLong - Fee in USDT: %.6f, netSell = gross %.6f - feeUSDT %.6f",
+			totalFeeInUSDT, grossUSDTReceived, totalFeeInUSDT)
+	} else if totalFeeInOtherAsset > 0 {
+		log.Printf("[BINANCE] CloseSpotLong - Fee in %v (%.8f), USDT received = %.6f (fee paid separately in %s)",
+			feeAssets, totalFeeInOtherAsset, netSell, feeAssets[0])
+	}
+
+	// This profit is now: ΔUSDT ≈ (USDT after close) - (USDT before open),
+	// assuming no other USDT transactions in between.
 	profit := netSell - buySpent
 
-	log.Printf("[BINANCE] CloseSpotLong - Buy spent: %.6f USDT, Sell received: %.6f USDT (gross: %.6f, fee: %.6f), Net Profit: %.6f USDT",
-		buySpent, netSell, actualUSDTReceived, totalFee, profit)
+	log.Printf("[BINANCE] CloseSpotLong - SUMMARY: BuySpent=%.6f USDT, NetSell=%.6f USDT, Profit=%.6f USDT",
+		buySpent, netSell, profit)
 
-	avgPrice := actualUSDTReceived / execQty
+	avgPrice := grossUSDTReceived / execQty
 
 	// Remove position from local tracking
 	b.posMutex.Lock()
 	delete(b.positions, pairName+"_spot")
 	b.posMutex.Unlock()
 
-	// Calculate PnL if we have entry price
+	// Calculate PnL% if we have entry price
 	var pnl float64
 	var pnlMsg string
 	if entryPrice > 0 {
@@ -288,13 +347,18 @@ func (b *BinanceClient) CloseSpotLong(ctx context.Context, pairName string, amou
 		pnlMsg = fmt.Sprintf(" (PnL: %.2f%%)", pnl)
 	}
 
+	totalFeeForReturn := totalFeeInUSDT
+	if totalFeeForReturn == 0 {
+		totalFeeForReturn = totalFeeInOtherAsset
+	}
+
 	return &TradeResult{
 		OrderID:       strconv.FormatInt(orderResp.OrderID, 10),
 		ExecutedPrice: avgPrice,
 		ExecutedQty:   execQty,
-		Fee:           totalFee,
+		Fee:           totalFeeForReturn,
 		Success:       orderResp.Status == "FILLED",
-		Message:       fmt.Sprintf("Spot long closed: sold %.8f at %.8f%s", execQty, avgPrice, pnlMsg),
+		Message:       fmt.Sprintf("Spot long closed: sold %.8f at %.8f%s (Profit: %.6f USDT)", execQty, avgPrice, pnlMsg, profit),
 	}, nil
 }
 
