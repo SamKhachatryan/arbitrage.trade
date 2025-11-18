@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"log"
-	"os"
 	"time"
 
+	"arbitrage.trade/clients"
 	"github.com/joho/godotenv"
 )
 
@@ -32,7 +32,7 @@ var arbitrageThresholds = map[string]float64{
 	"bch-usdt":   0.7,
 	"uni-usdt":   0.8,
 	"avax-usdt":  0.8,
-	"apt-usdt":   0.9,
+	"apt-usdt":   0.3,
 	"near-usdt":  0.8,
 	"matic-usdt": 0.7,
 	"pepe-usdt":  1.2,
@@ -89,7 +89,7 @@ func main() {
 	}
 
 	/////// BINANCE
-	// Get API credentials from environment or use test mode
+
 	// apiKey := os.Getenv("BINANCE_API_KEY")
 	// apiSecret := os.Getenv("BINANCE_API_SECRET")
 
@@ -100,15 +100,15 @@ func main() {
 	// 	apiSecret = "your-api-secret"
 	// }
 
-	// // Initialize Binance client
-	// ctx := context.Background()
-	// binanceClient := NewBinanceClient(apiKey, apiSecret)
+	// Initialize Binance client
+	ctx := context.Background()
+	// binanceClient := clients.NewBinanceClient(apiKey, apiSecret)
 
-	// // Test parameters
-	// pairName := "blur-usdt"
+	// Test parameters
+	// pairName := "arb-usdt"
 	// amountUSDT := 10.0
 
-	// // Step 1: Open spot long position
+	// Step 1: Open spot long position
 	// log.Println("[BINANCE] ▶️  Step 1: Opening Spot Long Position...")
 	// _, err = binanceClient.PutSpotLong(ctx, pairName, amountUSDT)
 	// if err != nil {
@@ -117,111 +117,38 @@ func main() {
 	// 	return
 	// }
 
-	// // // Step 2: Open futures short position
-	// log.Println("[BINANCE] ▶️  Step 2: Opening Futures Short Position...")
-	// _, err = binanceClient.PutFuturesShort(ctx, pairName, amountUSDT)
-	// if err != nil {
-	// 	log.Printf("❌ Failed to open futures short: %v", err)
-	// 	log.Println("⚠️  Attempting to close spot position to avoid risk...")
+	ConsiderArbitrageOpportunity(ctx, clients.Binance, 0.236300, clients.Bitget, 0.236800, "doge-usdt", 0.21, 10.0)
 
-	// 	// Try to close the spot position
-	// 	// if closeResult, closeErr := binanceClient.CloseSpotLong(ctx, pairName); closeErr != nil {
-	// 	// 	log.Printf("❌ Failed to close spot position: %v", closeErr)
-	// 	// 	log.Println("⚠️  MANUAL INTERVENTION REQUIRED - You have an open spot position!")
-	// 	// } else {
-	// 	// 	log.Printf("✅ Spot position closed: %s", closeResult.Message)
-	// 	// }
-	// 	return
-	// }
+	// var wg sync.WaitGroup
+	// wg.Add(4)
 
-	// // // Close spot long
-	// log.Println("[BINANCE] ▶️  Step 3: Closing Spot Long Position...")
-	// _, err = binanceClient.CloseSpotLong(ctx, pairName)
-	// if err != nil {
-	// 	log.Printf("❌ Failed to close spot long: %v", err)
-	// }
+	// go func() {
+	// 	defer wg.Done()
+	// 	clients.Execute(ctx, clients.Binance, clients.PutSpotLong, pairName, amountUSDT)
+	// 	clients.Execute(ctx, clients.Binance, clients.CloseSpotLong, pairName, amountUSDT)
+	// }()
 
-	// // // Close futures short
-	// log.Println("[BINANCE] ▶️  Step 4: Closing Futures Short Position...")
-	// _, err = binanceClient.CloseFuturesShort(ctx, pairName)
-	// if err != nil {
-	// 	log.Printf("❌ Failed to close futures short: %v", err)
-	// }
+	// go func() {
+	// 	defer wg.Done()
+	// 	clients.Execute(ctx, clients.Binance, clients.PutFuturesShort, pairName, amountUSDT)
+	// 	clients.Execute(ctx, clients.Binance, clients.CloseFuturesShort, pairName, amountUSDT)
+	// }()
 
-	/////// BINANECE END
+	// go func() {
+	// 	defer wg.Done()
+	// 	clients.Execute(ctx, clients.Bitget, clients.PutSpotLong, pairName, amountUSDT)
+	// 	clients.Execute(ctx, clients.Bitget, clients.CloseSpotLong, pairName, amountUSDT)
+	// }()
 
-	/////// BITGET
+	// go func() {
+	// 	defer wg.Done()
+	// 	clients.Execute(ctx, clients.Bitget, clients.PutFuturesShort, pairName, amountUSDT)
+	// 	clients.Execute(ctx, clients.Bitget, clients.CloseFuturesShort, pairName, amountUSDT)
+	// }()
 
-	apiKey := os.Getenv("BITGET_API_KEY")
-	apiSecret := os.Getenv("BITGET_API_SECRET")
-	apiPassphrase := os.Getenv("BITGET_PASSPHRASE")
-
-	if apiKey == "" || apiSecret == "" || apiPassphrase == "" {
-		log.Println("⚠️  WARNING: BITGET_API_KEY, BITGET_API_SECRET or BITGET_PASSPHRASE not set in environment")
-		log.Println("⚠️  Using placeholder credentials - API calls will fail")
-		apiKey = "your-api-key"
-		apiSecret = "your-api-secret"
-	}
-
-	// Initialize Binance client
-	ctx := context.Background()
-	bitgetClient := NewBitgetClient(apiKey, apiSecret, apiPassphrase)
-
-	// Test parameters
-	pairName := "blur-usdt"
-	amountUSDT := 10.0
-
-	// Step 1: Open spot long position
-	// log.Println("[BITGET] ▶️  Step 1: Opening Spot Long Position...")
-	// _, err = bitgetClient.PutSpotLong(ctx, pairName, amountUSDT)
-	// if err != nil {
-	// 	log.Printf("❌ Failed to open spot long: %v", err)
-	// 	log.Println("💡 Make sure your API keys are correct and have trading permissions")
-	// 	return
-	// }
-
-	// // Step 2: Open futures short position
-	log.Println("[BITGET] ▶️  Step 2: Opening Futures Short Position...")
-	_, err = bitgetClient.PutFuturesShort(ctx, pairName, amountUSDT)
-	if err != nil {
-		log.Printf("❌ Failed to open futures short: %v", err)
-		log.Println("⚠️  Attempting to close spot position to avoid risk...")
-
-		// Try to close the spot position
-		// if closeResult, closeErr := binanceClient.CloseSpotLong(ctx, pairName); closeErr != nil {
-		// 	log.Printf("❌ Failed to close spot position: %v", closeErr)
-		// 	log.Println("⚠️  MANUAL INTERVENTION REQUIRED - You have an open spot position!")
-		// } else {
-		// 	log.Printf("✅ Spot position closed: %s", closeResult.Message)
-		// }
-		return
-	}
-
-	// // Close spot long
-	// log.Println("[BITGET] ▶️  Step 3: Closing Spot Long Position...")
-	// _, err = bitgetClient.CloseSpotLong(ctx, pairName)
-	// if err != nil {
-	// 	log.Printf("❌ Failed to close spot long: %v", err)
-	// }
-
-	time.Sleep(10 * time.Second)
-
-	// Close futures short
-	log.Println("[BITGET] ▶️  Step 4: Closing Futures Short Position...")
-	_, err = bitgetClient.CloseFuturesShort(ctx, pairName)
-	if err != nil {
-		log.Printf("❌ Failed to close futures short: %v", err)
-	}
-
-	/////// BITGET END
-
-	// log.Println()
-	// log.Println("==========================================================")
-	// log.Println("🎉 Arbitrage Cycle Completed!")
-	// log.Println("==========================================================")
+	// wg.Wait()
 
 	// Note: The websocket arbitrage detection code is commented out below
-	// Uncomment when you want to integrate with the live price feed
 
 	// conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	// if err != nil {
