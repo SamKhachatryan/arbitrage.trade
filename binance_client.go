@@ -51,7 +51,7 @@ func (b *BinanceClient) GetName() string {
 // PutSpotLong buys the asset in spot market
 func (b *BinanceClient) PutSpotLong(ctx context.Context, pairName string, amountUSDT float64) (*TradeResult, error) {
 	symbol := b.normalizePairName(pairName, false)
-	_, err := b.getSpotPrice(ctx, symbol)
+	_, err := b.getSpotPrice(symbol)
 	if err != nil {
 		log.Printf("[BINANCE] PutSpotLong - ERROR: Failed to get spot price: %v", err)
 		return nil, fmt.Errorf("failed to get spot price: %w", err)
@@ -124,7 +124,7 @@ func (b *BinanceClient) PutFuturesShort(ctx context.Context, pairName string, am
 	symbol := b.normalizePairName(pairName, true)
 
 	// Get current price to calculate quantity
-	price, err := b.getFuturesPrice(ctx, symbol)
+	price, err := b.getFuturesPrice(symbol)
 	if err != nil {
 		log.Printf("[BINANCE] PutFuturesShort - ERROR: Failed to get futures price: %v", err)
 		return nil, fmt.Errorf("failed to get futures price: %w", err)
@@ -393,7 +393,7 @@ func (b *BinanceClient) normalizePairName(pairName string, isFutures bool) strin
 }
 
 // Helper: get current spot price
-func (b *BinanceClient) getSpotPrice(ctx context.Context, symbol string) (float64, error) {
+func (b *BinanceClient) getSpotPrice(symbol string) (float64, error) {
 	url := fmt.Sprintf("%s/api/v3/ticker/price?symbol=%s", b.spotBaseURL, symbol)
 
 	resp, err := http.Get(url)
@@ -421,7 +421,7 @@ func (b *BinanceClient) getSpotPrice(ctx context.Context, symbol string) (float6
 }
 
 // Helper: get current futures price
-func (b *BinanceClient) getFuturesPrice(ctx context.Context, symbol string) (float64, error) {
+func (b *BinanceClient) getFuturesPrice(symbol string) (float64, error) {
 	url := fmt.Sprintf("%s/fapi/v1/ticker/price?symbol=%s", b.futsBaseURL, symbol)
 
 	resp, err := http.Get(url)

@@ -88,12 +88,76 @@ func main() {
 		log.Println("⚠️  No .env file found, using default values")
 	}
 
+	/////// BINANCE
 	// Get API credentials from environment or use test mode
-	apiKey := os.Getenv("BINANCE_API_KEY")
-	apiSecret := os.Getenv("BINANCE_API_SECRET")
+	// apiKey := os.Getenv("BINANCE_API_KEY")
+	// apiSecret := os.Getenv("BINANCE_API_SECRET")
 
-	if apiKey == "" || apiSecret == "" {
-		log.Println("⚠️  WARNING: BINANCE_API_KEY or BINANCE_API_SECRET not set in environment")
+	// if apiKey == "" || apiSecret == "" {
+	// 	log.Println("⚠️  WARNING: BINANCE_API_KEY or BINANCE_API_SECRET not set in environment")
+	// 	log.Println("⚠️  Using placeholder credentials - API calls will fail")
+	// 	apiKey = "your-api-key"
+	// 	apiSecret = "your-api-secret"
+	// }
+
+	// // Initialize Binance client
+	// ctx := context.Background()
+	// binanceClient := NewBinanceClient(apiKey, apiSecret)
+
+	// // Test parameters
+	// pairName := "blur-usdt"
+	// amountUSDT := 10.0
+
+	// // Step 1: Open spot long position
+	// log.Println("[BINANCE] ▶️  Step 1: Opening Spot Long Position...")
+	// _, err = binanceClient.PutSpotLong(ctx, pairName, amountUSDT)
+	// if err != nil {
+	// 	log.Printf("❌ Failed to open spot long: %v", err)
+	// 	log.Println("💡 Make sure your API keys are correct and have trading permissions")
+	// 	return
+	// }
+
+	// // // Step 2: Open futures short position
+	// log.Println("[BINANCE] ▶️  Step 2: Opening Futures Short Position...")
+	// _, err = binanceClient.PutFuturesShort(ctx, pairName, amountUSDT)
+	// if err != nil {
+	// 	log.Printf("❌ Failed to open futures short: %v", err)
+	// 	log.Println("⚠️  Attempting to close spot position to avoid risk...")
+
+	// 	// Try to close the spot position
+	// 	// if closeResult, closeErr := binanceClient.CloseSpotLong(ctx, pairName); closeErr != nil {
+	// 	// 	log.Printf("❌ Failed to close spot position: %v", closeErr)
+	// 	// 	log.Println("⚠️  MANUAL INTERVENTION REQUIRED - You have an open spot position!")
+	// 	// } else {
+	// 	// 	log.Printf("✅ Spot position closed: %s", closeResult.Message)
+	// 	// }
+	// 	return
+	// }
+
+	// // // Close spot long
+	// log.Println("[BINANCE] ▶️  Step 3: Closing Spot Long Position...")
+	// _, err = binanceClient.CloseSpotLong(ctx, pairName)
+	// if err != nil {
+	// 	log.Printf("❌ Failed to close spot long: %v", err)
+	// }
+
+	// // // Close futures short
+	// log.Println("[BINANCE] ▶️  Step 4: Closing Futures Short Position...")
+	// _, err = binanceClient.CloseFuturesShort(ctx, pairName)
+	// if err != nil {
+	// 	log.Printf("❌ Failed to close futures short: %v", err)
+	// }
+
+	/////// BINANECE END
+
+	/////// BITGET
+
+	apiKey := os.Getenv("BITGET_API_KEY")
+	apiSecret := os.Getenv("BITGET_API_SECRET")
+	apiPassphrase := os.Getenv("BITGET_PASSPHRASE")
+
+	if apiKey == "" || apiSecret == "" || apiPassphrase == "" {
+		log.Println("⚠️  WARNING: BITGET_API_KEY, BITGET_API_SECRET or BITGET_PASSPHRASE not set in environment")
 		log.Println("⚠️  Using placeholder credentials - API calls will fail")
 		apiKey = "your-api-key"
 		apiSecret = "your-api-secret"
@@ -101,24 +165,24 @@ func main() {
 
 	// Initialize Binance client
 	ctx := context.Background()
-	binanceClient := NewBinanceClient(apiKey, apiSecret)
+	bitgetClient := NewBitgetClient(apiKey, apiSecret, apiPassphrase)
 
 	// Test parameters
 	pairName := "blur-usdt"
 	amountUSDT := 10.0
 
 	// Step 1: Open spot long position
-	log.Println("[BINANCE] ▶️  Step 1: Opening Spot Long Position...")
-	_, err = binanceClient.PutSpotLong(ctx, pairName, amountUSDT)
-	if err != nil {
-		log.Printf("❌ Failed to open spot long: %v", err)
-		log.Println("💡 Make sure your API keys are correct and have trading permissions")
-		return
-	}
+	// log.Println("[BITGET] ▶️  Step 1: Opening Spot Long Position...")
+	// _, err = bitgetClient.PutSpotLong(ctx, pairName, amountUSDT)
+	// if err != nil {
+	// 	log.Printf("❌ Failed to open spot long: %v", err)
+	// 	log.Println("💡 Make sure your API keys are correct and have trading permissions")
+	// 	return
+	// }
 
 	// // Step 2: Open futures short position
-	log.Println("[BINANCE] ▶️  Step 2: Opening Futures Short Position...")
-	_, err = binanceClient.PutFuturesShort(ctx, pairName, amountUSDT)
+	log.Println("[BITGET] ▶️  Step 2: Opening Futures Short Position...")
+	_, err = bitgetClient.PutFuturesShort(ctx, pairName, amountUSDT)
 	if err != nil {
 		log.Printf("❌ Failed to open futures short: %v", err)
 		log.Println("⚠️  Attempting to close spot position to avoid risk...")
@@ -134,18 +198,22 @@ func main() {
 	}
 
 	// // Close spot long
-	log.Println("[BINANCE] ▶️  Step 3: Closing Spot Long Position...")
-	_, err = binanceClient.CloseSpotLong(ctx, pairName)
-	if err != nil {
-		log.Printf("❌ Failed to close spot long: %v", err)
-	}
+	// log.Println("[BITGET] ▶️  Step 3: Closing Spot Long Position...")
+	// _, err = bitgetClient.CloseSpotLong(ctx, pairName)
+	// if err != nil {
+	// 	log.Printf("❌ Failed to close spot long: %v", err)
+	// }
 
-	// // Close futures short
-	log.Println("[BINANCE] ▶️  Step 4: Closing Futures Short Position...")
-	_, err = binanceClient.CloseFuturesShort(ctx, pairName)
+	time.Sleep(10 * time.Second)
+
+	// Close futures short
+	log.Println("[BITGET] ▶️  Step 4: Closing Futures Short Position...")
+	_, err = bitgetClient.CloseFuturesShort(ctx, pairName)
 	if err != nil {
 		log.Printf("❌ Failed to close futures short: %v", err)
 	}
+
+	/////// BITGET END
 
 	// log.Println()
 	// log.Println("==========================================================")
