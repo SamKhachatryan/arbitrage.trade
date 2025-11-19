@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"sync"
@@ -94,7 +95,7 @@ func main() {
 
 	ctx := context.Background()
 
-	// Safety flag to ensure only ONE arbitrage cycle is executed during testing
+	// // Safety flag to ensure only ONE arbitrage cycle is executed during testing
 	var executedOnce bool
 	var executionMutex sync.Mutex
 
@@ -162,7 +163,7 @@ func main() {
 							// fmt.Printf("Buy on   - %s (%f)\n", buyEx, high)
 							// fmt.Printf("Pair     - %s \n", pairName)
 							// fmt.Printf("Diff     - %.2f%% \n", diff)
-							if ((buyEx == "binance" && sellEx == "bitget") || (buyEx == "bitget" && sellEx == "binance")) && diff > 0.2 {
+							if ((buyEx == "binance" && sellEx == "bitget") || (buyEx == "bitget" && sellEx == "binance")) && diff > 0.3 {
 								// TESTING SAFETY: Only execute once and stop
 								executionMutex.Lock()
 								if executedOnce {
@@ -176,6 +177,12 @@ func main() {
 								ConsiderArbitrageOpportunity(ctx, common.ExchangeType(buyEx), high, common.ExchangeType(sellEx), low, pairName, diff, 10.0)
 
 								return
+							} else if diff > 0.2 {
+								fmt.Println("---------------------")
+								fmt.Printf("Short on - %s (%f)\n", sellEx, low)
+								fmt.Printf("Buy on   - %s (%f)\n", buyEx, high)
+								fmt.Printf("Pair     - %s \n", pairName)
+								fmt.Printf("Diff     - %.2f%% \n", diff)
 							}
 						}
 					}

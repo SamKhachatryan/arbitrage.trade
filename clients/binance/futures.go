@@ -92,8 +92,27 @@ func (b *BinanceClient) getFuturesBalance(ctx context.Context) (float64, error) 
 	return 0, nil
 }
 
+func (b *BinanceClient) setLeverage(ctx context.Context, symbol string, leverage int) error {
+	params := url.Values{}
+	params.Set("symbol", symbol)
+	params.Set("leverage", strconv.Itoa(leverage))
+	params.Set("timestamp", strconv.FormatInt(time.Now().UnixMilli(), 10))
+
+	var resp struct {
+		Leverage int    `json:"leverage"`
+		Symbol   string `json:"symbol"`
+	}
+
+	return b.signedRequest(ctx, "POST", b.futsBaseURL+"/fapi/v1/leverage", params, &resp)
+}
+
 func (b *BinanceClient) PutFuturesShort(ctx context.Context, pairName string, amountUSDT float64) (*common.TradeResult, error) {
 	symbol := b.normalizePairName(pairName, true)
+
+	if err := b.setLeverage(ctx, symbol, 1); err != nil {
+		log.Printf("[BINANCE] PutFuturesShort - ERROR: Failed to set leverage: %v", err)
+		return nil, fmt.Errorf("failed to set leverage: %w", err)
+	}
 
 	// Get current price to calculate quantity
 	price, err := b.getFuturesPrice(symbol)

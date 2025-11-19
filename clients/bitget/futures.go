@@ -70,8 +70,38 @@ func (b *BitgetClient) getFuturesBalance(ctx context.Context) (float64, error) {
 	return 0, nil
 }
 
+func (b *BitgetClient) setLeverage(ctx context.Context, symbol string, leverage int) error {
+	body := map[string]interface{}{
+		"symbol":      symbol,
+		"productType": "USDT-FUTURES",
+		"marginCoin":  "USDT",
+		"leverage":    fmt.Sprintf("%d", leverage),
+		"holdSide":    "short",
+	}
+
+	var resp struct {
+		Code string `json:"code"`
+		Msg  string `json:"msg"`
+	}
+
+	if err := b.signedRequest(ctx, "POST", "/api/v2/mix/account/set-leverage", body, &resp); err != nil {
+		return err
+	}
+
+	if resp.Code != "00000" {
+		return fmt.Errorf("bitget error: %s - %s", resp.Code, resp.Msg)
+	}
+
+	return nil
+}
+
 func (b *BitgetClient) PutFuturesShort(ctx context.Context, pairName string, amountUSDT float64) (*common.TradeResult, error) {
 	symbol := b.normalizeSymbol(pairName)
+
+	if err := b.setLeverage(ctx, symbol, 1); err != nil {
+		log.Printf("[BITGET] PutFuturesShort - ERROR: Failed to set leverage: %v", err)
+		return nil, fmt.Errorf("failed to set leverage: %w", err)
+	}
 
 	balance, err := b.getFuturesBalance(ctx)
 	if err != nil {

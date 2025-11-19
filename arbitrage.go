@@ -40,5 +40,5 @@ func ConsiderArbitrageOpportunity(ctx context.Context, shortExchange common.Exch
 	}()
 
 	wg.Wait()
-	fmt.Printf("Result: %f Spot Profit - %f, Futures Profit - %f\n", spotProfit+futuresProfit, spotProfit, futuresProfit)
+	fmt.Printf("Result (%s): %f Spot Profit - %f, Futures Profit - %f\n", pairName, spotProfit+futuresProfit, spotProfit, futuresProfit)
 }
