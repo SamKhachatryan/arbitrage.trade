@@ -28,9 +28,6 @@ func (b *BinanceClient) normalizePairName(pairName string, isFutures bool) strin
 	parts := strings.Split(strings.ToUpper(pairName), "-")
 	symbol := strings.Join(parts, "")
 
-	// Futures symbols may need adjustment (some use different naming)
-	// For most cases on Binance, futures perpetual contracts are the same as spot
-
 	return symbol
 }
 

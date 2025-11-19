@@ -28,8 +28,6 @@ var PairPrecisions = map[string]PairPrecision{
 	"apt-usdt":   {QuantityPrecision: 2, PricePrecision: 3},
 	"near-usdt":  {QuantityPrecision: 1, PricePrecision: 4},
 	"matic-usdt": {QuantityPrecision: 0, PricePrecision: 5},
-	"pepe-usdt":  {QuantityPrecision: 0, PricePrecision: 8},
-	"floki-usdt": {QuantityPrecision: 0, PricePrecision: 7},
 	"sui-usdt":   {QuantityPrecision: 1, PricePrecision: 4},
 	"icp-usdt":   {QuantityPrecision: 2, PricePrecision: 3},
 	"xvs-usdt":   {QuantityPrecision: 2, PricePrecision: 3},

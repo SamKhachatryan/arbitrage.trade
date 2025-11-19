@@ -41,8 +41,6 @@ var arbitrageThresholds = map[string]float64{
 	"apt-usdt":   0.3,
 	"near-usdt":  0.8,
 	"matic-usdt": 0.7,
-	"pepe-usdt":  1.2,
-	"floki-usdt": 1.3,
 	"sui-usdt":   0.9,
 	"icp-usdt":   0.9,
 	"xvs-usdt":   1.0,
@@ -95,7 +93,9 @@ func main() {
 
 	ctx := context.Background()
 
-	// // Safety flag to ensure only ONE arbitrage cycle is executed during testing
+	// ConsiderArbitrageOpportunity(ctx, common.Binance, 0.0000023, common.Bitget, 0.00000021, "pepe-usdt", 0.3, 10)
+
+	// Safety flag to ensure only ONE arbitrage cycle is executed during testing
 	var executedOnce bool
 	var executionMutex sync.Mutex
 
