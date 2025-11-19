@@ -6,26 +6,30 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"arbitrage.trade/clients/binance"
+	"arbitrage.trade/clients/bitget"
+	"arbitrage.trade/clients/common"
 )
 
 var (
 	// Singleton clients - reuse the same instance to maintain position state
-	clientInstances = make(map[ExchangeType]ExchangeTradeClient)
+	clientInstances = make(map[common.ExchangeType]common.ExchangeTradeClient)
 	clientMutex     sync.RWMutex
 )
 
-var exchangeRegistry = map[ExchangeType]func(string, string) ExchangeTradeClient{
-	Binance: func(key, secret string) ExchangeTradeClient {
-		return NewBinanceClient(key, secret)
+var exchangeRegistry = map[common.ExchangeType]func(string, string) common.ExchangeTradeClient{
+	common.Binance: func(key, secret string) common.ExchangeTradeClient {
+		return binance.NewBinanceClient(key, secret)
 	},
-	Bitget: func(key, secret string) ExchangeTradeClient {
+	common.Bitget: func(key, secret string) common.ExchangeTradeClient {
 		passphrase := os.Getenv("BITGET_PASSPHRASE")
-		return NewBitgetClient(key, secret, passphrase)
+		return bitget.NewBitgetClient(key, secret, passphrase)
 	},
 }
 
 // getOrCreateClient returns a singleton client instance for the given exchange
-func getOrCreateClient(exchange ExchangeType) (ExchangeTradeClient, error) {
+func getOrCreateClient(exchange common.ExchangeType) (common.ExchangeTradeClient, error) {
 	clientMutex.RLock()
 	if client, exists := clientInstances[exchange]; exists {
 		clientMutex.RUnlock()
@@ -62,25 +66,27 @@ func getOrCreateClient(exchange ExchangeType) (ExchangeTradeClient, error) {
 	return client, nil
 }
 
-func Execute(ctx context.Context, exchange ExchangeType, command OrderType, pairName string, amountUSDT float64) error {
+func Execute(ctx context.Context, exchange common.ExchangeType, command common.OrderType, pairName string, amountUSDT float64) (float64, error) {
 	fmt.Printf("[%s] |%s| - Starting\n", exchange, command)
 
 	client, err := getOrCreateClient(exchange)
+	profit := 0.00
+
 	if err != nil {
-		return err
+		return 0.00, err
 	}
 
 	switch command {
-	case PutSpotLong:
+	case common.PutSpotLong:
 		_, err = client.PutSpotLong(ctx, pairName, amountUSDT)
-	case CloseSpotLong:
-		_, err = client.CloseSpotLong(ctx, pairName, amountUSDT)
-	case PutFuturesShort:
+	case common.CloseSpotLong:
+		_, profit, err = client.CloseSpotLong(ctx, pairName, amountUSDT)
+	case common.PutFuturesShort:
 		_, err = client.PutFuturesShort(ctx, pairName, amountUSDT)
-	case CloseFuturesShort:
-		_, err = client.CloseFuturesShort(ctx, pairName)
+	case common.CloseFuturesShort:
+		_, profit, err = client.CloseFuturesShort(ctx, pairName)
 	default:
-		return fmt.Errorf("unknown command: %s", command)
+		return 0.00, fmt.Errorf("unknown command: %s", command)
 	}
 
 	if err != nil {
@@ -89,29 +95,5 @@ func Execute(ctx context.Context, exchange ExchangeType, command OrderType, pair
 		fmt.Printf("[%s] |%s| - Succeeded\n", exchange, command)
 	}
 
-	return err
+	return profit, err
 }
-
-// func ExecuteArbitrageCycle(ctx context.Context, exchange string, pairName string, amountUSDT float64) error {
-// 	log.Printf("[%s] Starting arbitrage cycle for %s", exchange, pairName)
-
-// 	if err := Execute(ctx, exchange, "open-spot", pairName, amountUSDT); err != nil {
-// 		return fmt.Errorf("open spot failed: %w", err)
-// 	}
-
-// 	if err := Execute(ctx, exchange, "open-futures", pairName, amountUSDT); err != nil {
-// 		log.Printf("[%s] Futures failed, closing spot", exchange)
-// 		Execute(ctx, exchange, "close-spot", pairName, amountUSDT)
-// 		return fmt.Errorf("open futures failed: %w", err)
-// 	}
-
-// 	if err := Execute(ctx, exchange, "close-spot", pairName, amountUSDT); err != nil {
-// 		return fmt.Errorf("close spot failed: %w", err)
-// 	}
-
-// 	if err := Execute(ctx, exchange, "close-futures", pairName, amountUSDT); err != nil {
-// 		return fmt.Errorf("close futures failed: %w", err)
-// 	}
-
-// 	return nil
-// }

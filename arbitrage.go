@@ -2,51 +2,43 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"arbitrage.trade/clients"
+	"arbitrage.trade/clients/common"
 )
 
-func ConsiderArbitrageOpportunity(ctx context.Context, shortExchange clients.ExchangeType, shortPrice float64, longExchange clients.ExchangeType,
+func ConsiderArbitrageOpportunity(ctx context.Context, shortExchange common.ExchangeType, shortPrice float64, longExchange common.ExchangeType,
 	longPrice float64, pairName string, diffPercent float64, amountUSDT float64) {
 	// Example output when an arbitrage opportunity is detected
 	// println("Short on - binance (0.236300)")
 
-	if diffPercent < 0.2 {
+	if diffPercent < 0.1 {
 		return
 	}
 
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
+
+	spotProfit := 0.00
+	futuresProfit := 0.00
 
 	go func() {
-		clients.Execute(ctx, clients.Binance, clients.PutSpotLong, pairName, amountUSDT)
-		time.Sleep(5 * time.Second)
-		clients.Execute(ctx, clients.Binance, clients.CloseSpotLong, pairName, amountUSDT)
+		clients.Execute(ctx, shortExchange, common.PutFuturesShort, pairName, amountUSDT)
+		time.Sleep(10 * time.Second)
+		futuresProfit, _ = clients.Execute(ctx, shortExchange, common.CloseFuturesShort, pairName, amountUSDT)
 		defer wg.Done()
 	}()
 
-	// go func() {
-	// 	clients.Execute(ctx, clients.Binance, clients.PutFuturesShort, pairName, amountUSDT)
-	// 	time.Sleep(10 * time.Second)
-	// 	clients.Execute(ctx, clients.Binance, clients.CloseFuturesShort, pairName, amountUSDT)
-	// 	defer wg.Done()
-	// }()
-
-	// go func() {
-	// 	defer wg.Done()
-	// 	clients.Execute(ctx, clients.Bitget, clients.PutSpotLong, pairName, amountUSDT)
-	// 	time.Sleep(10 * time.Second)
-	// 	clients.Execute(ctx, clients.Bitget, clients.CloseSpotLong, pairName, amountUSDT)
-	// }()
-
-	// go func() {
-	// 	defer wg.Done()
-	// 	clients.Execute(ctx, clients.Bitget, clients.PutFuturesShort, pairName, amountUSDT)
-	// 	time.Sleep(10 * time.Second)
-	// 	clients.Execute(ctx, clients.Bitget, clients.CloseFuturesShort, pairName, amountUSDT)
-	// }()
+	go func() {
+		clients.Execute(ctx, longExchange, common.PutSpotLong, pairName, amountUSDT)
+		time.Sleep(5 * time.Second)
+		spotProfit, _ = clients.Execute(ctx, longExchange, common.CloseSpotLong, pairName, amountUSDT)
+		defer wg.Done()
+	}()
 
 	wg.Wait()
+	fmt.Printf("Result: %f Spot Profit - %f, Futures Profit - %f\n", spotProfit+futuresProfit, spotProfit, futuresProfit)
 }
