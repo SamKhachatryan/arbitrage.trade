@@ -142,7 +142,7 @@ func main() {
 
 					high := math.Max(p1.Price, p2.Price)
 					low := math.Min(p1.Price, p2.Price)
-					if low == 0 {
+					if low == 0 || high == 0 {
 						continue
 					}
 					diff := ((high - low) / low) * 100.0
