@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math"
 	"sync"
 	"time"
 
@@ -59,6 +58,12 @@ var arbitrageThresholds = map[string]float64{
 
 const riskCoef = 4.0
 
+var supportedExchanges = map[string]bool{
+	"binance":  true,
+	"bitget":   true,
+	"whitebit": true,
+}
+
 func getReliability(p PairExchange) Reliability {
 	age := float64(time.Now().UnixMilli() - p.LastUpdateTs)
 	switch {
@@ -93,7 +98,7 @@ func main() {
 
 	ctx := context.Background()
 
-	// ConsiderArbitrageOpportunity(ctx, common.Binance, 0.0000023, common.Bitget, 0.00000021, "pepe-usdt", 0.3, 10)
+	// ConsiderArbitrageOpportunity(ctx, common.Whitebit, 0.0000023, common.Whitebit, 0.00000021, "blur-usdt", 0.3, 10)
 
 	// Safety flag to ensure only ONE arbitrage cycle is executed during testing
 	var executedOnce bool
@@ -133,15 +138,19 @@ func main() {
 			perpMap := perpMapRaw.(map[string]interface{})
 
 			for ex1, v1 := range spotMap {
-				p1 := toPairExchange(v1.([]interface{}))
+				longExchange := toPairExchange(v1.([]interface{}))
 				for ex2, v2 := range perpMap {
 					if ex1 == ex2 {
 						continue
 					}
-					p2 := toPairExchange(v2.([]interface{}))
+					shortExchange := toPairExchange(v2.([]interface{}))
 
-					high := math.Max(p1.Price, p2.Price)
-					low := math.Min(p1.Price, p2.Price)
+					if longExchange.Price > shortExchange.Price {
+						continue
+					}
+
+					high := shortExchange.Price
+					low := longExchange.Price
 					if low == 0 || high == 0 {
 						continue
 					}
@@ -149,22 +158,13 @@ func main() {
 					threshold := arbitrageThresholds[pairName] / riskCoef
 
 					if diff >= threshold {
-						r1 := getReliability(p1)
-						r2 := getReliability(p2)
+						r1 := getReliability(longExchange)
+						r2 := getReliability(shortExchange)
 						if r1 > Low && r2 > Low {
 							buyEx := ex1
 							sellEx := ex2
-							if p1.Price > p2.Price {
-								buyEx, sellEx = ex2, ex1
-							}
 
-							// fmt.Println("---------------------")
-							// fmt.Printf("Short on - %s (%f)\n", sellEx, low)
-							// fmt.Printf("Buy on   - %s (%f)\n", buyEx, high)
-							// fmt.Printf("Pair     - %s \n", pairName)
-							// fmt.Printf("Diff     - %.2f%% \n", diff)
-							if ((buyEx == "binance" && sellEx == "bitget") || (buyEx == "bitget" && sellEx == "binance")) && diff > 0.3 {
-								// TESTING SAFETY: Only execute once and stop
+							if supportedExchanges[buyEx] && supportedExchanges[sellEx] && diff > 0.6 {
 								executionMutex.Lock()
 								if executedOnce {
 									executionMutex.Unlock()
@@ -174,13 +174,18 @@ func main() {
 								executedOnce = true
 								executionMutex.Unlock()
 
-								ConsiderArbitrageOpportunity(ctx, common.ExchangeType(buyEx), high, common.ExchangeType(sellEx), low, pairName, diff, 10.0)
+								fmt.Println("---------------------")
+								fmt.Printf("Cheaper   - %s (%f)\n", ex1, low)
+								fmt.Printf("Expensive - %s (%f)\n", ex2, high)
+								fmt.Printf("Pair      - %s \n", pairName)
+								fmt.Printf("Diff      - %.2f%% \n", diff)
 
+								ConsiderArbitrageOpportunity(ctx, common.ExchangeType(ex2), high, common.ExchangeType(ex1), low, pairName, diff, 10.0)
 								return
 							} else if diff > 0.2 {
 								fmt.Println("---------------------")
-								fmt.Printf("Short on - %s (%f)\n", sellEx, low)
-								fmt.Printf("Buy on   - %s (%f)\n", buyEx, high)
+								fmt.Printf("Short on - %s (%f)\n", ex2, high)
+								fmt.Printf("Buy on   - %s (%f)\n", ex1, low)
 								fmt.Printf("Pair     - %s \n", pairName)
 								fmt.Printf("Diff     - %.2f%% \n", diff)
 							}
