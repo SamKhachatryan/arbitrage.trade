@@ -27,14 +27,14 @@ func ConsiderArbitrageOpportunity(ctx context.Context, shortExchange common.Exch
 
 	go func() {
 		clients.Execute(ctx, shortExchange, common.PutFuturesShort, pairName, amountUSDT)
-		time.Sleep(10 * time.Second)
+		time.Sleep(20 * time.Second)
 		futuresProfit, _ = clients.Execute(ctx, shortExchange, common.CloseFuturesShort, pairName, amountUSDT)
 		defer wg.Done()
 	}()
 
 	go func() {
 		clients.Execute(ctx, longExchange, common.PutSpotLong, pairName, amountUSDT)
-		time.Sleep(10 * time.Second)
+		time.Sleep(20 * time.Second)
 		spotProfit, _ = clients.Execute(ctx, longExchange, common.CloseSpotLong, pairName, amountUSDT)
 		defer wg.Done()
 	}()

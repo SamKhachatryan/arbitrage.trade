@@ -160,11 +160,11 @@ func main() {
 					if diff >= threshold {
 						r1 := getReliability(longExchange)
 						r2 := getReliability(shortExchange)
-						if r1 > Low && r2 > Low {
+						if r1 > NotReliableAtAll && r2 > NotReliableAtAll {
 							buyEx := ex1
 							sellEx := ex2
 
-							if supportedExchanges[buyEx] && supportedExchanges[sellEx] && diff > 0.6 {
+							if supportedExchanges[buyEx] && supportedExchanges[sellEx] && diff > 0.3 {
 								executionMutex.Lock()
 								if executedOnce {
 									executionMutex.Unlock()
