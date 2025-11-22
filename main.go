@@ -120,6 +120,7 @@ func main() {
 		}
 
 		var parsed map[string]interface{}
+
 		if err := msgpack.NewDecoder(bytes.NewReader(data)).Decode(&parsed); err != nil {
 			log.Println("Decode error:", err)
 			continue
@@ -145,6 +146,8 @@ func main() {
 					}
 					shortExchange := toPairExchange(v2.([]interface{}))
 
+					UpdatePrices(pairName, ex2, shortExchange.Price, ex1, longExchange.Price)
+
 					if longExchange.Price > shortExchange.Price {
 						continue
 					}
@@ -155,6 +158,9 @@ func main() {
 						continue
 					}
 					diff := ((high - low) / low) * 100.0
+
+					// Update active positions with current prices
+
 					threshold := arbitrageThresholds[pairName] / riskCoef
 
 					if diff >= threshold {
@@ -164,7 +170,7 @@ func main() {
 							buyEx := ex1
 							sellEx := ex2
 
-							if supportedExchanges[buyEx] && supportedExchanges[sellEx] && diff > 0.3 {
+							if supportedExchanges[buyEx] && supportedExchanges[sellEx] && diff > 0.2 {
 								executionMutex.Lock()
 								if executedOnce {
 									executionMutex.Unlock()
@@ -181,13 +187,14 @@ func main() {
 								fmt.Printf("Diff      - %.2f%% \n", diff)
 
 								ConsiderArbitrageOpportunity(ctx, common.ExchangeType(ex2), high, common.ExchangeType(ex1), low, pairName, diff, 10.0)
-								return
-							} else if diff > 0.2 {
-								fmt.Println("---------------------")
-								fmt.Printf("Short on - %s (%f)\n", ex2, high)
-								fmt.Printf("Buy on   - %s (%f)\n", ex1, low)
-								fmt.Printf("Pair     - %s \n", pairName)
-								fmt.Printf("Diff     - %.2f%% \n", diff)
+								// Don't return - keep monitoring for exit conditions
+								// return
+							} else if diff > 0.1 {
+								// fmt.Println("---------------------")
+								// fmt.Printf("Short on - %s (%f)\n", ex2, high)
+								// fmt.Printf("Buy on   - %s (%f)\n", ex1, low)
+								// fmt.Printf("Pair     - %s \n", pairName)
+								// fmt.Printf("Diff     - %.2f%% \n", diff)
 							}
 						}
 					}
