@@ -10,6 +10,8 @@ import (
 	"arbitrage.trade/clients/binance"
 	"arbitrage.trade/clients/bitget"
 	"arbitrage.trade/clients/common"
+	"arbitrage.trade/clients/gate"
+	"arbitrage.trade/clients/okx"
 	"arbitrage.trade/clients/whitebit"
 )
 
@@ -29,6 +31,13 @@ var exchangeRegistry = map[common.ExchangeType]func(string, string) common.Excha
 	},
 	common.Whitebit: func(key, secret string) common.ExchangeTradeClient {
 		return whitebit.NewWhitebitClient(key, secret)
+	},
+	common.Gate: func(key, secret string) common.ExchangeTradeClient {
+		return gate.NewGateClient(key, secret)
+	},
+	common.Okx: func(key, secret string) common.ExchangeTradeClient {
+		passphrase := os.Getenv("OKX_PASSPHRASE")
+		return okx.NewOkxClient(key, secret, passphrase)
 	},
 }
 

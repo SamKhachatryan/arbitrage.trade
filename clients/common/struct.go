@@ -50,6 +50,7 @@ const (
 	Binance  ExchangeType = "binance"
 	Bitget   ExchangeType = "bitget"
 	Whitebit ExchangeType = "whitebit"
+	Gate     ExchangeType = "gate"
 	Okx      ExchangeType = "okx"
 )
 

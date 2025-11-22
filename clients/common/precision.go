@@ -17,7 +17,7 @@ var PairPrecisions = map[string]PairPrecision{
 	"doge-usdt":  {QuantityPrecision: 1, PricePrecision: 6},
 	"xrp-usdt":   {QuantityPrecision: 2, PricePrecision: 4},
 	"ton-usdt":   {QuantityPrecision: 3, PricePrecision: 4},
-	"ada-usdt":   {QuantityPrecision: 1, PricePrecision: 5},
+	"ada-usdt":   {QuantityPrecision: 0, PricePrecision: 5},
 	"link-usdt":  {QuantityPrecision: 3, PricePrecision: 3},
 	"arb-usdt":   {QuantityPrecision: 0, PricePrecision: 4},
 	"op-usdt":    {QuantityPrecision: 3, PricePrecision: 4},

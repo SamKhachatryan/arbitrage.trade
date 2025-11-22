@@ -62,6 +62,8 @@ var supportedExchanges = map[string]bool{
 	"binance":  true,
 	"bitget":   true,
 	"whitebit": true,
+	// "gate":     true,
+	"okx": true,
 }
 
 func getReliability(p PairExchange) Reliability {
@@ -97,8 +99,6 @@ func main() {
 	}
 
 	ctx := context.Background()
-
-	// ConsiderArbitrageOpportunity(ctx, common.Whitebit, 0.0000023, common.Whitebit, 0.00000021, "blur-usdt", 0.3, 10)
 
 	// Safety flag to ensure only ONE arbitrage cycle is executed during testing
 	var executedOnce bool

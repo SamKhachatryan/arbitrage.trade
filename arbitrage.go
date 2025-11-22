@@ -190,6 +190,9 @@ func ConsiderArbitrageOpportunity(ctx context.Context, shortExchange common.Exch
 	activePositions[pairName] = position
 	positionsMutex.Unlock()
 
+	// spotProfit := 0.00
+	// futuresProfit := 0.00
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -197,25 +200,47 @@ func ConsiderArbitrageOpportunity(ctx context.Context, shortExchange common.Exch
 		defer wg.Done()
 		_, err := clients.Execute(ctx, shortExchange, common.PutFuturesShort, pairName, amountUSDT)
 		if err != nil {
-			log.Printf("[ERROR] Failed to open futures short: %v", err)
+			log.Printf("[ERROR] Failed to close futures short: %v", err)
 			position.mu.Lock()
 			position.IsOpen = false
 			position.mu.Unlock()
 		}
+		// time.Sleep(5 * time.Second)
+		// var err1 error
+		// futuresProfit, err1 = clients.Execute(ctx, shortExchange, common.CloseFuturesShort, pairName, amountUSDT)
+		// if err1 != nil {
+		// 	log.Printf("[ERROR] Failed to close futures short: %v", err1)
+		// 	position.mu.Lock()
+		// 	position.IsOpen = false
+		// 	position.mu.Unlock()
+		// }
 	}()
 
 	go func() {
 		defer wg.Done()
 		_, err := clients.Execute(ctx, longExchange, common.PutSpotLong, pairName, amountUSDT)
 		if err != nil {
-			log.Printf("[ERROR] Failed to open spot long: %v", err)
+			log.Printf("[ERROR] Failed to close spot long: %v", err)
 			position.mu.Lock()
 			position.IsOpen = false
 			position.mu.Unlock()
 		}
+		// time.Sleep(5 * time.Second)
+		// var err1 error
+		// spotProfit, err1 = clients.Execute(ctx, longExchange, common.CloseSpotLong, pairName, amountUSDT)
+		// if err1 != nil {
+		// 	log.Printf("[ERROR] Failed to close spot long: %v", err1)
+		// 	position.mu.Lock()
+		// 	position.IsOpen = false
+		// 	position.mu.Unlock()
+		// }
 	}()
 
 	wg.Wait()
+
+	// totalProfit := spotProfit + futuresProfit
+	// log.Printf("[RESULT %s] Total Profit: %.4f USDT | Spot: %.4f | Futures: %.4f",
+	// 	position.PairName, totalProfit, spotProfit, futuresProfit)
 
 	// If opening failed, clean up
 	position.mu.RLock()
