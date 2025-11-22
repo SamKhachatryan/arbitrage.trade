@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -52,27 +53,52 @@ func UpdatePrices(pairName string, shortExchange string, shortPrice float64, lon
 	// Calculate spread convergence percentage
 	spreadConvergence := ((position.EntrySpread - currentSpread) / position.EntrySpread) * 100.0
 
+	// Calculate estimated profit based on spread convergence
+	// Entry spread was X%, current spread is Y%
+	// We profit from (X - Y)% of position size, minus fees (~0.15% total)
+	estimatedProfit := ((position.EntrySpread - currentSpread) / 100.0) * position.AmountUSDT
+	estimatedProfitAfterFees := estimatedProfit - (position.AmountUSDT * 0.0015) // 0.15% total fees
+
 	elapsedTime := time.Since(position.EntryTime).Seconds()
 
-	log.Printf("[TRACK %s] Entry: %.2f%% | Current: %.2f%% | Convergence: %.1f%% | Time: %.0fs",
-		pairName, position.EntrySpread, currentSpread, spreadConvergence, elapsedTime)
+	log.Printf("[TRACK %s] Entry: %.2f%% | Current: %.2f%% | Convergence: %.1f%% | Est.Profit: $%.4f | Time: %.0fs",
+		pairName, position.EntrySpread, currentSpread, spreadConvergence, estimatedProfitAfterFees, elapsedTime)
 
-	// Exit conditions:
-	// 1. Spread has converged by 60% or more (profit target)
-	// 2. Spread has reversed (negative means prices crossed)
-	// 3. Maximum hold time of 120 seconds (safety exit)
+	// Exit conditions optimized for 0.2%+ entry spreads:
+	// Focus on taking small profits quickly rather than waiting
+	// 1. ANY positive profit after fees - take it (don't be greedy)
+	// 2. Spread reversed (prices crossed) - emergency exit
+	// 3. Spread widened significantly (>30% from entry) - cut loss
+	// 4. Time-based safety:
+	//    - After 15s: close if profit > $0.01
+	//    - After 30s: close if profit > $0
+	//    - After 60s: close if profit > -$0.05 (small loss acceptable)
+	//    - After 90s: force close
 	shouldClose := false
 	reason := ""
 
-	if spreadConvergence >= 40.0 {
+	// Take profit aggressively - any profit after 5 seconds is good
+	if elapsedTime >= 5 && estimatedProfitAfterFees > 0.01 {
 		shouldClose = true
-		reason = "Spread converged 60%+"
+		reason = fmt.Sprintf("Quick profit: $%.4f", estimatedProfitAfterFees)
+	} else if elapsedTime >= 15 && estimatedProfitAfterFees > 0.005 {
+		shouldClose = true
+		reason = fmt.Sprintf("Small profit after 15s: $%.4f", estimatedProfitAfterFees)
+	} else if elapsedTime >= 30 && estimatedProfitAfterFees > 0 {
+		shouldClose = true
+		reason = fmt.Sprintf("Any profit after 30s: $%.4f", estimatedProfitAfterFees)
 	} else if currentSpread <= 0 {
 		shouldClose = true
-		reason = "Spread reversed (prices crossed)"
-	} else if elapsedTime >= 120 {
+		reason = "Spread reversed (emergency exit)"
+	} else if currentSpread > position.EntrySpread*1.3 {
 		shouldClose = true
-		reason = "Max hold time reached (120s)"
+		reason = "Spread widened 30%+ (cut loss)"
+	} else if elapsedTime >= 60 && estimatedProfitAfterFees > -0.05 {
+		shouldClose = true
+		reason = fmt.Sprintf("60s timeout, P/L: $%.4f", estimatedProfitAfterFees)
+	} else if elapsedTime >= 90 {
+		shouldClose = true
+		reason = fmt.Sprintf("90s force close, P/L: $%.4f", estimatedProfitAfterFees)
 	}
 
 	if shouldClose {

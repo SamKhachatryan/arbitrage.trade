@@ -160,17 +160,21 @@ func main() {
 					diff := ((high - low) / low) * 100.0
 
 					// Update active positions with current prices
+					UpdatePrices(pairName, ex2, high, ex1, low)
 
 					threshold := arbitrageThresholds[pairName] / riskCoef
 
 					if diff >= threshold {
 						r1 := getReliability(longExchange)
 						r2 := getReliability(shortExchange)
-						if r1 > NotReliableAtAll && r2 > NotReliableAtAll {
+						if r1 > Low && r2 > Low {
 							buyEx := ex1
 							sellEx := ex2
 
-							if supportedExchanges[buyEx] && supportedExchanges[sellEx] && diff > 0.2 {
+							// Require minimum 0.5% spread to cover fees and make profit
+							// Typical fees: 0.1% x 2 legs x 2 trades = 0.4% minimum
+							log.Printf("%.2f%% \n", diff)
+							if supportedExchanges[buyEx] && supportedExchanges[sellEx] && diff >= 0.2 {
 								executionMutex.Lock()
 								if executedOnce {
 									executionMutex.Unlock()
