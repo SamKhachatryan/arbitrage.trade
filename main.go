@@ -56,8 +56,8 @@ var arbitrageThresholds = map[string]float64{
 const riskCoef = 4.0
 
 var supportedExchanges = map[string]bool{
-	"binance": true,
-	// "bitget":   true,
+	"binance":  true,
+	"bitget":   true,
 	"whitebit": true,
 	// "gate":     true,
 	"okx": true,
