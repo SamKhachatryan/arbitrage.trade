@@ -2,13 +2,10 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"log"
-	"sync"
 	"time"
 
-	"arbitrage.trade/clients/common"
 	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
 	"github.com/vmihailenco/msgpack/v5"
@@ -59,8 +56,8 @@ var arbitrageThresholds = map[string]float64{
 const riskCoef = 4.0
 
 var supportedExchanges = map[string]bool{
-	"binance":  true,
-	"bitget":   true,
+	"binance": true,
+	// "bitget":   true,
 	"whitebit": true,
 	// "gate":     true,
 	"okx": true,
@@ -98,11 +95,11 @@ func main() {
 		log.Println("⚠️  No .env file found, using default values")
 	}
 
-	ctx := context.Background()
+	// ctx := context.Background()
 
 	// Safety flag to ensure only ONE arbitrage cycle is executed during testing
-	var executedOnce bool
-	var executionMutex sync.Mutex
+	// var executedOnce bool
+	// var executionMutex sync.Mutex
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
@@ -173,16 +170,16 @@ func main() {
 
 							// Require minimum 0.5% spread to cover fees and make profit
 							// Typical fees: 0.1% x 2 legs x 2 trades = 0.4% minimum
-							log.Printf("%.2f%% \n", diff)
-							if supportedExchanges[buyEx] && supportedExchanges[sellEx] && diff >= 0.2 {
-								executionMutex.Lock()
-								if executedOnce {
-									executionMutex.Unlock()
-									continue
-								}
+							// log.Printf("%.2f%% \n", diff)
+							if supportedExchanges[buyEx] && supportedExchanges[sellEx] && diff >= 0.3 {
+								// executionMutex.Lock()
+								// if executedOnce {
+								// 	executionMutex.Unlock()
+								// 	continue
+								// }
 
-								executedOnce = true
-								executionMutex.Unlock()
+								// executedOnce = true
+								// executionMutex.Unlock()
 
 								fmt.Println("---------------------")
 								fmt.Printf("Cheaper   - %s (%f)\n", ex1, low)
@@ -190,7 +187,7 @@ func main() {
 								fmt.Printf("Pair      - %s \n", pairName)
 								fmt.Printf("Diff      - %.2f%% \n", diff)
 
-								ConsiderArbitrageOpportunity(ctx, common.ExchangeType(ex2), high, common.ExchangeType(ex1), low, pairName, diff, 10.0)
+								// ConsiderArbitrageOpportunity(ctx, common.ExchangeType(ex2), high, common.ExchangeType(ex1), low, pairName, diff, 10.0)
 								// Don't return - keep monitoring for exit conditions
 								// return
 							} else if diff > 0.1 {

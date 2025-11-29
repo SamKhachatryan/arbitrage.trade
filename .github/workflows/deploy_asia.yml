@@ -1,0 +1,26 @@
+# .github/deploy.yml
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - master  # or your deployment branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.ASIA_SERVER_HOST }}
+          username: ${{ secrets.ASIA_SERVER_USER }}
+          key: ${{ secrets.ASIA_SERVER_SSH_KEY }}
+          port: ${{ secrets.ASIA_SERVER_SSH_PORT }}
+          script: |
+            cd /root/projects/arbitrage.trade
+            git pull
+            export NVM_DIR="$HOME/.nvm"
+            source $NVM_DIR/nvm.sh
+            pm2 restart arbitrage.trade
