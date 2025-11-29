@@ -11,7 +11,7 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-var wsURL = "ws://185.7.81.99:4010"
+var wsURL = "ws://146.66.214.41:4010"
 
 type PairExchange struct {
 	Price        float64
