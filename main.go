@@ -53,7 +53,7 @@ var arbitrageThresholds = map[string]float64{
 	"bnb-usdt":   0.5,
 }
 
-const riskCoef = 400.0
+const riskCoef = 4.0
 
 var supportedExchanges = map[string]bool{
 	"binance":  true,
@@ -171,7 +171,7 @@ func main() {
 							// Require minimum 0.5% spread to cover fees and make profit
 							// Typical fees: 0.1% x 2 legs x 2 trades = 0.4% minimum
 							// log.Printf("%.2f%% \n", diff)
-							if supportedExchanges[buyEx] && supportedExchanges[sellEx] && diff >= 0.03 {
+							if supportedExchanges[buyEx] && supportedExchanges[sellEx] && diff >= 0.3 {
 								// executionMutex.Lock()
 								// if executedOnce {
 								// 	executionMutex.Unlock()
