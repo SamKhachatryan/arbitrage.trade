@@ -171,7 +171,7 @@ func main() {
 							// Require minimum 0.5% spread to cover fees and make profit
 							// Typical fees: 0.1% x 2 legs x 2 trades = 0.4% minimum
 							// log.Printf("%.2f%% \n", diff)
-							if supportedExchanges[buyEx] && supportedExchanges[sellEx] && diff >= 0.3 {
+							if supportedExchanges[buyEx] && supportedExchanges[sellEx] && diff >= 0.2 {
 								// executionMutex.Lock()
 								// if executedOnce {
 								// 	executionMutex.Unlock()
