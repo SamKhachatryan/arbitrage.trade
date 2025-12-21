@@ -2,17 +2,18 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"log"
+	"os"
 	"time"
 
-	"arbitrage.trade/clients/common"
+	"arbitrage.trade/orderbook"
 	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-var wsURL = "ws://185.7.81.99:4010"
+var wsURL string
+var orderbookSignalURL string
 
 type PairExchange struct {
 	Price        float64
@@ -97,7 +98,58 @@ func main() {
 		log.Println("⚠️  No .env file found, using default values")
 	}
 
-	// ctx := context.Background()
+	// Get WebSocket URL from environment variable
+	orderbookSignalURL = os.Getenv("SIGNAL_WS_URL")
+	if orderbookSignalURL == "" {
+		orderbookSignalURL = "ws://185.7.81.99:4010" // Default to original URL
+		log.Println("⚠️  SIGNAL_WS_URL not set, using default:", orderbookSignalURL)
+	} else {
+		log.Println("📡 Using Signal WebSocket URL:", orderbookSignalURL)
+	}
+
+	// Use the same URL for both (backward compatibility)
+	wsURL = orderbookSignalURL
+
+	// Initialize global orderbook manager
+	log.Println("📊 Initializing orderbook manager...")
+	obManager := orderbook.NewGlobalManager(orderbookSignalURL)
+
+	// Add trading pairs to monitor
+	tradingPairs := []string{
+		"btc-usdt",
+		"eth-usdt",
+		"sol-usdt",
+		"doge-usdt",
+		"xrp-usdt",
+		"ton-usdt",
+		"ada-usdt",
+		"bnb-usdt",
+		"trx-usdt",
+		"avax-usdt",
+	}
+
+	for _, pair := range tradingPairs {
+		log.Printf("📈 Adding pair: %s (spot + perp)", pair)
+		if err := obManager.AddPair(pair); err != nil {
+			log.Printf("❌ Failed to add pair %s: %v", pair, err)
+		}
+	}
+
+	log.Println("✅ Orderbook manager started for all pairs")
+	log.Println("💡 Each pair has separate WebSocket connections for spot and perpetual")
+
+	// Initialize the arbitrage analyzer
+	log.Println("🔍 Initializing arbitrage analyzer...")
+	analyzer := orderbook.NewAnalyzer(obManager)
+	obManager.SetAnalyzer(analyzer)
+	defer analyzer.Close()
+	log.Println("✅ Analyzer enabled - will analyze on each signal update (spread >= 0.5%)")
+	log.Println("📝 Logging all opportunities to opportunities.log file")
+
+	// TODO: Add periodic analyzer that checks all orderbooks for arbitrage opportunities
+	// For now, we'll keep the old WebSocket connection for backward compatibility
+
+	// ctx := context.Context()
 
 	// Safety flag to ensure only ONE arbitrage cycle is executed during testing
 	// var executedOnce bool
@@ -110,6 +162,9 @@ func main() {
 	defer conn.Close()
 
 	conn.SetReadLimit(1 << 20)
+
+	// Cleanup on exit
+	defer obManager.StopAll()
 
 	for {
 		_, data, err := conn.ReadMessage()
@@ -125,86 +180,87 @@ func main() {
 			continue
 		}
 
-		for pairName, val := range parsed {
-			if len(pairName) > 5 && pairName[len(pairName)-5:] == "-perp" {
-				continue
-			}
+		// TODO: Remove this old processing once we fully migrate to orderbook-based analysis
+		// for pairName, val := range parsed {
+		// 	if len(pairName) > 5 && pairName[len(pairName)-5:] == "-perp" {
+		// 		continue
+		// 	}
 
-			spotMap := val.(map[string]interface{})
-			perpMapRaw, ok := parsed[pairName+"-perp"]
-			if !ok {
-				continue
-			}
-			perpMap := perpMapRaw.(map[string]interface{})
+		// 	spotMap := val.(map[string]interface{})
+		// 	perpMapRaw, ok := parsed[pairName+"-perp"]
+		// 	if !ok {
+		// 		continue
+		// 	}
+		// 	perpMap := perpMapRaw.(map[string]interface{})
 
-			for ex1, v1 := range spotMap {
-				longExchange := toPairExchange(v1.([]interface{}))
-				for ex2, v2 := range perpMap {
-					if ex1 == ex2 {
-						continue
-					}
-					shortExchange := toPairExchange(v2.([]interface{}))
+		// 	for ex1, v1 := range spotMap {
+		// 		longExchange := toPairExchange(v1.([]interface{}))
+		// 		for ex2, v2 := range perpMap {
+		// 			if ex1 == ex2 {
+		// 				continue
+		// 			}
+		// 			shortExchange := toPairExchange(v2.([]interface{}))
 
-					UpdatePrices(pairName, ex2, shortExchange.Price, ex1, longExchange.Price)
+		// 			UpdatePrices(pairName, ex2, shortExchange.Price, ex1, longExchange.Price)
 
-					if longExchange.Price > shortExchange.Price {
-						continue
-					}
+		// 			if longExchange.Price > shortExchange.Price {
+		// 				continue
+		// 			}
 
-					high := shortExchange.Price
-					low := longExchange.Price
-					if common.IsZero(low) || common.IsZero(high) {
-						continue
-					}
-					diff := ((high - low) / low) * 100.0
+		// 			high := shortExchange.Price
+		// 			low := longExchange.Price
+		// 			if common.IsZero(low) || common.IsZero(high) {
+		// 				continue
+		// 			}
+		// 			diff := ((high - low) / low) * 100.0
 
-					// Update active positions with current prices
-					UpdatePrices(pairName, ex2, high, ex1, low)
+		// 			// Update active positions with current prices
+		// 			UpdatePrices(pairName, ex2, high, ex1, low)
 
-					threshold := arbitrageThresholds[pairName] / riskCoef
+		// 			threshold := arbitrageThresholds[pairName] / riskCoef
 
-					if common.GreaterThanOrEqual(diff, threshold) {
-						r1 := getReliability(longExchange)
-						r2 := getReliability(shortExchange)
-						if r1 >= NotReliableAtAll && r2 >= NotReliableAtAll {
-							buyEx := ex1
-							sellEx := ex2
+		// 			if common.GreaterThanOrEqual(diff, threshold) {
+		// 				r1 := getReliability(longExchange)
+		// 				r2 := getReliability(shortExchange)
+		// 				if r1 >= NotReliableAtAll && r2 >= NotReliableAtAll {
+		// 					buyEx := ex1
+		// 					sellEx := ex2
 
-							fmt.Printf("%s %s %f\n", buyEx, sellEx, diff)
+		// 					fmt.Printf("%s %s %f\n", buyEx, sellEx, diff)
 
-							// Require minimum 0.5% spread to cover fees and make profit
-							// Typical fees: 0.1% x 2 legs x 2 trades = 0.4% minimum
-							// log.Printf("%.2f%% \n", diff)
-							if supportedExchanges[buyEx] && supportedExchanges[sellEx] && common.GreaterThanOrEqual(diff, 0.1) {
-								// executionMutex.Lock()
-								// if executedOnce {
-								// 	executionMutex.Unlock()
-								// 	continue
-								// }
+		// 					// Require minimum 0.5% spread to cover fees and make profit
+		// 					// Typical fees: 0.1% x 2 legs x 2 trades = 0.4% minimum
+		// 					// log.Printf("%.2f%% \n", diff)
+		// 					if supportedExchanges[buyEx] && supportedExchanges[sellEx] && common.GreaterThanOrEqual(diff, 0.1) {
+		// 						// executionMutex.Lock()
+		// 						// if executedOnce {
+		// 						// 	executionMutex.Unlock()
+		// 						// 	continue
+		// 						// }
 
-								// executedOnce = true
-								// executionMutex.Unlock()
+		// 						// executedOnce = true
+		// 						// executionMutex.Unlock()
 
-								fmt.Println("---------------------")
-								fmt.Printf("Cheaper   - %s (%f)\n", ex1, low)
-								fmt.Printf("Expensive - %s (%f)\n", ex2, high)
-								fmt.Printf("Pair      - %s \n", pairName)
-								fmt.Printf("Diff      - %.2f%% \n", diff)
+		// 						fmt.Println("---------------------")
+		// 						fmt.Printf("Cheaper   - %s (%f)\n", ex1, low)
+		// 						fmt.Printf("Expensive - %s (%f)\n", ex2, high)
+		// 						fmt.Printf("Pair      - %s \n", pairName)
+		// 						fmt.Printf("Diff      - %.2f%% \n", diff)
 
-								// ConsiderArbitrageOpportunity(ctx, common.ExchangeType(ex2), high, common.ExchangeType(ex1), low, pairName, diff, 10.0)
-								// Don't return - keep monitoring for exit conditions
-								// return
-							} else if common.GreaterThan(diff, 0.1) {
-								// fmt.Println("---------------------")
-								// fmt.Printf("Short on - %s (%f)\n", ex2, high)
-								// fmt.Printf("Buy on   - %s (%f)\n", ex1, low)
-								// fmt.Printf("Pair     - %s \n", pairName)
-								// fmt.Printf("Diff     - %.2f%% \n", diff)
-							}
-						}
-					}
-				}
-			}
-		}
+		// 						// ConsiderArbitrageOpportunity(ctx, common.ExchangeType(ex2), high, common.ExchangeType(ex1), low, pairName, diff, 10.0)
+		// 						// Don't return - keep monitoring for exit conditions
+		// 						// return
+		// 					} else if common.GreaterThan(diff, 0.1) {
+		// 						// fmt.Println("---------------------")
+		// 						// fmt.Printf("Short on - %s (%f)\n", ex2, high)
+		// 						// fmt.Printf("Buy on   - %s (%f)\n", ex1, low)
+		// 						// fmt.Printf("Pair     - %s \n", pairName)
+		// 						// fmt.Printf("Diff     - %.2f%% \n", diff)
+		// 					}
+		// 				}
+		// 			}
+		// 		}
+		// 	}
+		// }
 	}
 }
