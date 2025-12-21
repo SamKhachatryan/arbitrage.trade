@@ -70,7 +70,7 @@ func (a *Analyzer) AnalyzePair(pairName string) {
 	opportunity := a.analyzeSignal(pm)
 	if opportunity != nil {
 		// Log all opportunities with spread >= 0.5%
-		if common.GreaterThanOrEqual(opportunity.SpreadPct, 0.005) {
+		if common.GreaterThanOrEqual(opportunity.SpreadPct, 0.5) {
 			a.logOpportunity(opportunity)
 		}
 	}
