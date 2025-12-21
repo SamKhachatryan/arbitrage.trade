@@ -91,7 +91,7 @@ func (g *GateClient) CloseSpotLong(ctx context.Context, pairName string, amountU
 		return nil, 0.0, fmt.Errorf("failed to get %s balance: %w", baseAsset, err)
 	}
 
-	if balance <= 0 {
+	if common.IsNegativeOrZero(balance) {
 		return nil, 0.0, fmt.Errorf("no %s balance to sell", baseAsset)
 	}
 

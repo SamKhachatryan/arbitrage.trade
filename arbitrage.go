@@ -78,19 +78,19 @@ func UpdatePrices(pairName string, shortExchange string, shortPrice float64, lon
 	reason := ""
 
 	// Take profit aggressively - any profit after 5 seconds is good
-	if elapsedTime >= 5 && estimatedProfitAfterFees > 0.01 {
+	if elapsedTime >= 5 && common.GreaterThan(estimatedProfitAfterFees, 0.01) {
 		shouldClose = true
 		reason = fmt.Sprintf("Quick profit: $%.4f", estimatedProfitAfterFees)
-	} else if elapsedTime >= 15 && estimatedProfitAfterFees > 0.005 {
+	} else if elapsedTime >= 15 && common.GreaterThan(estimatedProfitAfterFees, 0.005) {
 		shouldClose = true
 		reason = fmt.Sprintf("Small profit after 15s: $%.4f", estimatedProfitAfterFees)
-	} else if elapsedTime >= 30 && estimatedProfitAfterFees > 0 {
+	} else if elapsedTime >= 30 && common.IsPositive(estimatedProfitAfterFees) {
 		shouldClose = true
 		reason = fmt.Sprintf("Any profit after 30s: $%.4f", estimatedProfitAfterFees)
-	} else if currentSpread <= 0 {
+	} else if common.IsNegativeOrZero(currentSpread) {
 		shouldClose = true
 		reason = "Spread reversed (emergency exit)"
-	} else if currentSpread > position.EntrySpread*1.3 {
+	} else if common.GreaterThan(currentSpread, position.EntrySpread*1.3) {
 		shouldClose = true
 		reason = "Spread widened 30%+ (cut loss)"
 	} else if elapsedTime >= 60 && estimatedProfitAfterFees > -0.05 {
@@ -156,7 +156,7 @@ func closePosition(position *ArbitragePosition) {
 func ConsiderArbitrageOpportunity(ctx context.Context, shortExchange common.ExchangeType, shortPrice float64, longExchange common.ExchangeType,
 	longPrice float64, pairName string, diffPercent float64, amountUSDT float64) {
 
-	if diffPercent < 0.1 {
+	if common.LessThan(diffPercent, 0.1) {
 		return
 	}
 

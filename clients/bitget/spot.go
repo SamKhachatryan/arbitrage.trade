@@ -53,7 +53,7 @@ func (b *BitgetClient) PutSpotLong(ctx context.Context, pairName string, amountU
 	estimatedQty := amountUSDT / price
 
 	qty := common.RoundQuantity(estimatedQty, pairName)
-	if qty <= 0 {
+	if common.IsNegativeOrZero(qty) {
 		return nil, fmt.Errorf("calculated quantity is zero after rounding")
 	}
 
@@ -115,12 +115,12 @@ func (b *BitgetClient) CloseSpotLong(ctx context.Context, pairName string, amoun
 	if err != nil {
 		return nil, 0.00, err
 	}
-	if bal <= 0 {
+	if common.IsNegativeOrZero(bal) {
 		return nil, 0.00, fmt.Errorf("no balance for asset %s", asset)
 	}
 
 	qty := common.RoundQuantity(bal, pairName)
-	if qty <= 0 {
+	if common.IsNegativeOrZero(qty) {
 		return nil, 0.00, fmt.Errorf("rounded qty is zero")
 	}
 

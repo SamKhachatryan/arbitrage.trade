@@ -31,7 +31,7 @@ func (g *GateClient) getFuturesPosition(ctx context.Context, contract string) (*
 	}
 
 	for _, pos := range positions {
-		if pos.Contract == contract && pos.Size != 0 {
+		if pos.Contract == contract && common.NotEqual(float64(pos.Size), 0) {
 			return &pos, nil
 		}
 	}
@@ -71,7 +71,7 @@ func (g *GateClient) PutFuturesShort(ctx context.Context, pairName string, amoun
 
 	fillPrice, _ := strconv.ParseFloat(response.FillPrice, 64)
 	actualSize := float64(response.Size)
-	if actualSize < 0 {
+	if common.IsNegative(actualSize) {
 		actualSize = -actualSize
 	}
 	fee, _ := strconv.ParseFloat(response.TkfFee, 64)
@@ -106,7 +106,7 @@ func (g *GateClient) CloseFuturesShort(ctx context.Context, pairName string) (*c
 		return nil, 0.0, fmt.Errorf("failed to get position: %w", err)
 	}
 
-	if position == nil || position.Size == 0 {
+	if position == nil || common.IsZero(float64(position.Size)) {
 		g.mu.Lock()
 		delete(g.positions, pairName+"_futures")
 		g.mu.Unlock()
@@ -143,7 +143,7 @@ func (g *GateClient) CloseFuturesShort(ctx context.Context, pairName string) (*c
 
 	fillPrice, _ := strconv.ParseFloat(response.FillPrice, 64)
 	actualSize := float64(response.Size)
-	if actualSize < 0 {
+	if common.IsNegative(actualSize) {
 		actualSize = -actualSize
 	}
 	fee, _ := strconv.ParseFloat(response.TkfFee, 64)

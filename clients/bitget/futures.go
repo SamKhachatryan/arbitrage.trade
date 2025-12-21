@@ -117,7 +117,7 @@ func (b *BitgetClient) PutFuturesShort(ctx context.Context, pairName string, amo
 	}
 	quantity := amountUSDT / price
 	quantity = common.RoundQuantity(quantity, pairName)
-	if quantity <= 0 {
+	if common.IsNegativeOrZero(quantity) {
 		return nil, fmt.Errorf("calculated futures quantity is zero")
 	}
 
@@ -226,17 +226,17 @@ func (b *BitgetClient) CloseFuturesShort(ctx context.Context, pairName string) (
 	if err != nil {
 		return nil, 0.00, err
 	}
-	if posInfo.Total == 0 {
+	if common.IsZero(posInfo.Total) {
 		return nil, 0.00, fmt.Errorf("no open futures position for %s", symbol)
 	}
 
 	closeQty := posInfo.Total
-	if closeQty < 0 {
+	if common.IsNegative(closeQty) {
 		closeQty = -closeQty
 	}
 
 	closeQty = common.RoundQuantity(closeQty, pairName)
-	if closeQty <= 0 {
+	if common.IsNegativeOrZero(closeQty) {
 		return nil, 0.00, fmt.Errorf("rounded close qty is zero")
 	}
 

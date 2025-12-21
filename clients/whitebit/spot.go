@@ -52,7 +52,7 @@ func (w *WhitebitClient) PutSpotLong(ctx context.Context, pairName string, amoun
 	dealFee, _ := strconv.ParseFloat(response.DealFee, 64)
 
 	actualPrice := 0.0
-	if dealStock > 0 {
+	if common.IsPositive(dealStock) {
 		actualPrice = dealMoney / dealStock
 	}
 
@@ -98,7 +98,7 @@ func (w *WhitebitClient) CloseSpotLong(ctx context.Context, pairName string, amo
 		return nil, 0.0, fmt.Errorf("failed to get %s balance: %w", baseAsset, err)
 	}
 
-	if balance <= 0 {
+	if common.IsNegativeOrZero(balance) {
 		return nil, 0.0, fmt.Errorf("no %s balance to sell", baseAsset)
 	}
 
@@ -136,7 +136,7 @@ func (w *WhitebitClient) CloseSpotLong(ctx context.Context, pairName string, amo
 	dealFee, _ := strconv.ParseFloat(response.DealFee, 64)
 
 	actualPrice := 0.0
-	if dealStock > 0 {
+	if common.IsPositive(dealStock) {
 		actualPrice = dealMoney / dealStock
 	}
 

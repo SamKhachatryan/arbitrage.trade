@@ -171,7 +171,7 @@ func (b *BinanceClient) CloseSpotLong(ctx context.Context, pairName string, amou
 		return nil, 0.00, fmt.Errorf("failed to get balance: %w", err)
 	}
 
-	if balance == 0 {
+	if common.IsZero(balance) {
 		log.Printf("[BINANCE] CloseSpotLong - No balance found on exchange for %s", baseAsset)
 		// Clean up local position tracking
 		b.posMutex.Lock()
@@ -181,7 +181,7 @@ func (b *BinanceClient) CloseSpotLong(ctx context.Context, pairName string, amou
 	}
 
 	closeQuantity := common.RoundQuantity(balance, pairName)
-	if closeQuantity <= 0 {
+	if common.IsNegativeOrZero(closeQuantity) {
 		log.Printf("[BINANCE] CloseSpotLong - ERROR: Calculated quantity is zero or negative: %.8f", closeQuantity)
 		return nil, 0.00, fmt.Errorf("invalid close quantity: %.8f", closeQuantity)
 	}
@@ -240,7 +240,7 @@ func (b *BinanceClient) CloseSpotLong(ctx context.Context, pairName string, amou
 	b.posMutex.Unlock()
 
 	totalFeeForReturn := totalFeeInUSDT
-	if totalFeeForReturn == 0 {
+	if common.IsZero(totalFeeForReturn) {
 		totalFeeForReturn = totalFeeInOtherAsset
 	}
 

@@ -54,7 +54,7 @@ func (b *BinanceClient) getFuturesPositionRisk(ctx context.Context, symbol strin
 
 	// Find the position for the symbol (BOTH side for hedge mode, or default)
 	for _, pos := range positions {
-		if pos.Symbol == symbol && pos.PositionAmt != 0 {
+		if pos.Symbol == symbol && common.NotEqual(pos.PositionAmt, 0) {
 			return &pos, nil
 		}
 	}
@@ -189,7 +189,7 @@ func (b *BinanceClient) CloseFuturesShort(ctx context.Context, pairName string) 
 		return nil, 0.00, fmt.Errorf("failed to get position risk: %w", err)
 	}
 
-	if positionRisk.PositionAmt == 0 {
+	if common.IsZero(positionRisk.PositionAmt) {
 		log.Printf("[BINANCE] CloseFuturesShort - No open position found on exchange for %s", symbol)
 		// Clean up local position tracking
 		b.posMutex.Lock()
@@ -200,7 +200,7 @@ func (b *BinanceClient) CloseFuturesShort(ctx context.Context, pairName string) 
 
 	// Calculate the quantity to close (absolute value of position amount)
 	var closeQuantity float64
-	if positionRisk.PositionAmt < 0 {
+	if common.IsNegative(positionRisk.PositionAmt) {
 		closeQuantity = -positionRisk.PositionAmt
 	} else {
 		closeQuantity = positionRisk.PositionAmt
@@ -209,7 +209,7 @@ func (b *BinanceClient) CloseFuturesShort(ctx context.Context, pairName string) 
 	// Round quantity to step size
 	closeQuantity = common.RoundQuantity(closeQuantity, pairName)
 
-	if closeQuantity <= 0 {
+	if common.IsNegativeOrZero(closeQuantity) {
 		log.Printf("[BINANCE] CloseFuturesShort - ERROR: Calculated quantity is zero or negative: %.8f", closeQuantity)
 		return nil, 0.00, fmt.Errorf("invalid close quantity: %.8f", closeQuantity)
 	}

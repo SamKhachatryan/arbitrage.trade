@@ -6,12 +6,13 @@ import (
 	"log"
 	"time"
 
+	"arbitrage.trade/clients/common"
 	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-var wsURL = "ws://146.66.214.41:4010"
+var wsURL = "ws://185.7.81.99:4010"
 
 type PairExchange struct {
 	Price        float64
@@ -51,9 +52,10 @@ var arbitrageThresholds = map[string]float64{
 	"blur-usdt":  1.2,
 	"wojak-usdt": 1.3,
 	"bnb-usdt":   0.5,
+	"mon-usdt":   1.0,
 }
 
-const riskCoef = 4.0
+const riskCoef = 10.0
 
 var supportedExchanges = map[string]bool{
 	"binance":  true,
@@ -151,7 +153,7 @@ func main() {
 
 					high := shortExchange.Price
 					low := longExchange.Price
-					if low == 0 || high == 0 {
+					if common.IsZero(low) || common.IsZero(high) {
 						continue
 					}
 					diff := ((high - low) / low) * 100.0
@@ -161,17 +163,19 @@ func main() {
 
 					threshold := arbitrageThresholds[pairName] / riskCoef
 
-					if diff >= threshold {
+					if common.GreaterThanOrEqual(diff, threshold) {
 						r1 := getReliability(longExchange)
 						r2 := getReliability(shortExchange)
-						if r1 > NotReliableAtAll && r2 > NotReliableAtAll {
+						if r1 >= NotReliableAtAll && r2 >= NotReliableAtAll {
 							buyEx := ex1
 							sellEx := ex2
+
+							fmt.Printf("%s %s %f\n", buyEx, sellEx, diff)
 
 							// Require minimum 0.5% spread to cover fees and make profit
 							// Typical fees: 0.1% x 2 legs x 2 trades = 0.4% minimum
 							// log.Printf("%.2f%% \n", diff)
-							if supportedExchanges[buyEx] && supportedExchanges[sellEx] && diff >= 0.2 {
+							if supportedExchanges[buyEx] && supportedExchanges[sellEx] && common.GreaterThanOrEqual(diff, 0.1) {
 								// executionMutex.Lock()
 								// if executedOnce {
 								// 	executionMutex.Unlock()
@@ -190,7 +194,7 @@ func main() {
 								// ConsiderArbitrageOpportunity(ctx, common.ExchangeType(ex2), high, common.ExchangeType(ex1), low, pairName, diff, 10.0)
 								// Don't return - keep monitoring for exit conditions
 								// return
-							} else if diff > 0.1 {
+							} else if common.GreaterThan(diff, 0.1) {
 								// fmt.Println("---------------------")
 								// fmt.Printf("Short on - %s (%f)\n", ex2, high)
 								// fmt.Printf("Buy on   - %s (%f)\n", ex1, low)

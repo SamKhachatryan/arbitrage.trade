@@ -29,7 +29,7 @@ func (w *WhitebitClient) waitForPositionClosed(ctx context.Context, market strin
 		}
 
 		amount, _ := strconv.ParseFloat(position.Amount, 64)
-		if amount == 0 {
+		if common.IsZero(amount) {
 			return nil
 		}
 
@@ -54,7 +54,7 @@ func (w *WhitebitClient) waitForPositionOpen(ctx context.Context, market string,
 
 		if position != nil {
 			amount, _ := strconv.ParseFloat(position.Amount, 64)
-			if amount != 0 {
+			if common.NotEqual(amount, 0) {
 				return position, nil
 			}
 		}
@@ -122,7 +122,7 @@ func (w *WhitebitClient) PutFuturesShort(ctx context.Context, pairName string, a
 	quantity := amountUSDT / price
 	quantity = common.RoundQuantity(quantity, pairName)
 
-	if quantity <= 0 {
+	if common.IsNegativeOrZero(quantity) {
 		return nil, fmt.Errorf("quantity is zero after rounding")
 	}
 
@@ -145,7 +145,7 @@ func (w *WhitebitClient) PutFuturesShort(ctx context.Context, pairName string, a
 	}
 
 	dealStock, _ := strconv.ParseFloat(position.Amount, 64)
-	if dealStock < 0 {
+	if common.IsNegative(dealStock) {
 		dealStock = -dealStock // Short positions are negative
 	}
 
@@ -194,13 +194,13 @@ func (w *WhitebitClient) CloseFuturesShort(ctx context.Context, pairName string)
 	}
 
 	amount, _ := strconv.ParseFloat(position.Amount, 64)
-	if amount < 0 {
+	if common.IsNegative(amount) {
 		amount = -amount
 	}
 
 	closeQuantity := common.RoundQuantity(amount, pairName)
 
-	if closeQuantity <= 0 {
+	if common.IsNegativeOrZero(closeQuantity) {
 		return nil, 0.0, fmt.Errorf("calculated quantity is zero after rounding")
 	}
 
@@ -245,7 +245,7 @@ func (w *WhitebitClient) CloseFuturesShort(ctx context.Context, pairName string)
 	dealMoney, _ := strconv.ParseFloat(response.DealMoney, 64)
 
 	actualPrice := 0.0
-	if dealStock > 0 {
+	if common.IsPositive(dealStock) {
 		actualPrice = dealMoney / dealStock
 	}
 

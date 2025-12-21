@@ -46,10 +46,10 @@ func (o *OkxClient) getFuturesBalance(ctx context.Context) (float64, error) {
 				if detail.AvailEq != "" {
 					available, _ = strconv.ParseFloat(detail.AvailEq, 64)
 				}
-				if available == 0 && detail.AvailBal != "" {
+				if common.IsZero(available) && detail.AvailBal != "" {
 					available, _ = strconv.ParseFloat(detail.AvailBal, 64)
 				}
-				if available == 0 && detail.CashBal != "" {
+				if common.IsZero(available) && detail.CashBal != "" {
 					available, _ = strconv.ParseFloat(detail.CashBal, 64)
 				}
 				return available, nil
@@ -216,11 +216,11 @@ func (o *OkxClient) CloseFuturesShort(ctx context.Context, pairName string) (*co
 
 	pos, _ := strconv.ParseFloat(position.Pos, 64)
 	closeQuantity := pos
-	if closeQuantity < 0 {
+	if common.IsNegative(closeQuantity) {
 		closeQuantity = -closeQuantity
 	}
 
-	if closeQuantity <= 0 {
+	if common.IsNegativeOrZero(closeQuantity) {
 		return nil, 0.0, fmt.Errorf("no position to close")
 	}
 
@@ -287,7 +287,7 @@ func (o *OkxClient) CloseFuturesShort(ctx context.Context, pairName string) (*co
 	fillSz, _ := strconv.ParseFloat(orderData.AccFillSz, 64)
 	fee, _ := strconv.ParseFloat(orderData.Fee, 64)
 
-	if fee < 0 {
+	if common.IsNegative(fee) {
 		fee = -fee
 	}
 
