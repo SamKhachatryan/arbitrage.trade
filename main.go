@@ -125,7 +125,7 @@ func main() {
 		"xrp-usdt",
 		"ton-usdt",
 		"ada-usdt",
-		"bnb-usdt",
+		// "bnb-usdt",
 		"trx-usdt",
 		"avax-usdt",
 	}
