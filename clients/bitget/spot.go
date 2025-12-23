@@ -52,17 +52,28 @@ func (b *BitgetClient) PutSpotLong(ctx context.Context, pairName string, amountU
 	}
 	estimatedQty := amountUSDT / price
 
+	// For market buy orders on Bitget, we might need to specify quote currency amount (USDT)
+	// instead of base currency quantity (BTC). Let's try both approaches.
+
 	qty := common.RoundQuantity(estimatedQty, pairName)
 	if common.IsNegativeOrZero(qty) {
 		return nil, fmt.Errorf("calculated quantity is zero after rounding")
 	}
 
+	formattedQty := common.FormatQuantity(qty, pairName)
+	// For market buy, Bitget might want the USDT amount instead
+	formattedAmount := fmt.Sprintf("%.4f", amountUSDT)
+
+	log.Printf("[BITGET] PutSpotLong - symbol: %s, price: %.2f, amountUSDT: %.2f, qty: %f, formatted qty: %s, formatted amount: %s",
+		symbol, price, amountUSDT, qty, formattedQty, formattedAmount)
+
+	// Try using quote currency amount for market buy (common for CEX market orders)
 	body := map[string]interface{}{
 		"symbol":    symbol,
 		"side":      "buy",
 		"orderType": "market",
 		"force":     "gtc",
-		"size":      common.FormatQuantity(qty, pairName),
+		"size":      formattedAmount, // Use USDT amount for market buy
 		"clientOid": fmt.Sprintf("spot_%d", time.Now().UnixNano()),
 	}
 

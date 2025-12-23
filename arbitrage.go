@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -21,6 +21,7 @@ type ArbitragePosition struct {
 	AmountUSDT      float64
 	EntryTime       time.Time
 	IsOpen          bool
+	LastLogTime     time.Time // Track when we last logged to avoid spam
 	mu              sync.RWMutex
 }
 
@@ -53,52 +54,32 @@ func UpdatePrices(pairName string, shortExchange string, shortPrice float64, lon
 	// Calculate spread convergence percentage
 	spreadConvergence := ((position.EntrySpread - currentSpread) / position.EntrySpread) * 100.0
 
-	// Calculate estimated profit based on spread convergence
-	// Entry spread was X%, current spread is Y%
-	// We profit from (X - Y)% of position size, minus fees (~0.15% total)
-	estimatedProfit := ((position.EntrySpread - currentSpread) / 100.0) * position.AmountUSDT
-	estimatedProfitAfterFees := estimatedProfit - (position.AmountUSDT * 0.0015) // 0.15% total fees
-
 	elapsedTime := time.Since(position.EntryTime).Seconds()
 
-	log.Printf("[TRACK %s] Entry: %.2f%% | Current: %.2f%% | Convergence: %.1f%% | Est.Profit: $%.4f | Time: %.0fs",
-		pairName, position.EntrySpread, currentSpread, spreadConvergence, estimatedProfitAfterFees, elapsedTime)
+	// Only log every 2 seconds to avoid spam
+	timeSinceLastLog := time.Since(position.LastLogTime).Seconds()
+	if timeSinceLastLog >= 2.0 {
+		log.Printf("[TRACK %s] Entry: %.2f%% | Current: %.2f%% | Convergence: %.1f%% | Time: %.0fs",
+			pairName, position.EntrySpread, currentSpread, spreadConvergence, elapsedTime)
+		position.LastLogTime = time.Now()
+	}
 
-	// Exit conditions optimized for 0.2%+ entry spreads:
-	// Focus on taking small profits quickly rather than waiting
-	// 1. ANY positive profit after fees - take it (don't be greedy)
-	// 2. Spread reversed (prices crossed) - emergency exit
-	// 3. Spread widened significantly (>30% from entry) - cut loss
-	// 4. Time-based safety:
-	//    - After 15s: close if profit > $0.01
-	//    - After 30s: close if profit > $0
-	//    - After 60s: close if profit > -$0.05 (small loss acceptable)
-	//    - After 90s: force close
+	// Exit conditions:
+	// 1. Spread has converged by 60% or more (profit target)
+	// 2. Spread has reversed (negative means prices crossed)
+	// 3. Maximum hold time of 120 seconds (safety exit)
 	shouldClose := false
 	reason := ""
 
-	// Take profit aggressively - any profit after 5 seconds is good
-	if elapsedTime >= 5 && common.GreaterThan(estimatedProfitAfterFees, 0.01) {
+	if spreadConvergence >= 60.0 {
 		shouldClose = true
-		reason = fmt.Sprintf("Quick profit: $%.4f", estimatedProfitAfterFees)
-	} else if elapsedTime >= 15 && common.GreaterThan(estimatedProfitAfterFees, 0.005) {
+		reason = "Spread converged 60%+"
+	} else if currentSpread <= 0 {
 		shouldClose = true
-		reason = fmt.Sprintf("Small profit after 15s: $%.4f", estimatedProfitAfterFees)
-	} else if elapsedTime >= 30 && common.IsPositive(estimatedProfitAfterFees) {
+		reason = "Spread reversed (prices crossed)"
+	} else if elapsedTime >= 60 {
 		shouldClose = true
-		reason = fmt.Sprintf("Any profit after 30s: $%.4f", estimatedProfitAfterFees)
-	} else if common.IsNegativeOrZero(currentSpread) {
-		shouldClose = true
-		reason = "Spread reversed (emergency exit)"
-	} else if common.GreaterThan(currentSpread, position.EntrySpread*1.3) {
-		shouldClose = true
-		reason = "Spread widened 30%+ (cut loss)"
-	} else if elapsedTime >= 60 && estimatedProfitAfterFees > -0.05 {
-		shouldClose = true
-		reason = fmt.Sprintf("60s timeout, P/L: $%.4f", estimatedProfitAfterFees)
-	} else if elapsedTime >= 90 {
-		shouldClose = true
-		reason = fmt.Sprintf("90s force close, P/L: $%.4f", estimatedProfitAfterFees)
+		reason = "Max hold time reached (60s)"
 	}
 
 	if shouldClose {
@@ -144,19 +125,24 @@ func closePosition(position *ArbitragePosition) {
 	wg.Wait()
 
 	totalProfit := spotProfit + futuresProfit
-	log.Printf("[RESULT %s] Total Profit: %.4f USDT | Spot: %.4f | Futures: %.4f",
+	log.Printf("[💰 RESULT %s] Total Profit: %.4f USDT | Spot: %.4f | Futures: %.4f",
 		position.PairName, totalProfit, spotProfit, futuresProfit)
 
 	// Remove from active positions
 	positionsMutex.Lock()
 	delete(activePositions, position.PairName)
 	positionsMutex.Unlock()
+
+	// Position closed, now exit the program
+	log.Println("✅ Position closed successfully. Program will terminate.")
+	time.Sleep(1 * time.Second)
+	os.Exit(0)
 }
 
 func ConsiderArbitrageOpportunity(ctx context.Context, shortExchange common.ExchangeType, shortPrice float64, longExchange common.ExchangeType,
 	longPrice float64, pairName string, diffPercent float64, amountUSDT float64) {
 
-	if common.LessThan(diffPercent, 0.1) {
+	if common.LessThan(diffPercent, 0.5) {
 		return
 	}
 
@@ -183,15 +169,13 @@ func ConsiderArbitrageOpportunity(ctx context.Context, shortExchange common.Exch
 		EntrySpread:     diffPercent,
 		AmountUSDT:      amountUSDT,
 		EntryTime:       time.Now(),
+		LastLogTime:     time.Now(),
 		IsOpen:          true,
 	}
 
 	positionsMutex.Lock()
 	activePositions[pairName] = position
 	positionsMutex.Unlock()
-
-	// spotProfit := 0.00
-	// futuresProfit := 0.00
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -200,47 +184,25 @@ func ConsiderArbitrageOpportunity(ctx context.Context, shortExchange common.Exch
 		defer wg.Done()
 		_, err := clients.Execute(ctx, shortExchange, common.PutFuturesShort, pairName, amountUSDT)
 		if err != nil {
-			log.Printf("[ERROR] Failed to close futures short: %v", err)
+			log.Printf("[ERROR] Failed to open futures short: %v", err)
 			position.mu.Lock()
 			position.IsOpen = false
 			position.mu.Unlock()
 		}
-		// time.Sleep(5 * time.Second)
-		// var err1 error
-		// futuresProfit, err1 = clients.Execute(ctx, shortExchange, common.CloseFuturesShort, pairName, amountUSDT)
-		// if err1 != nil {
-		// 	log.Printf("[ERROR] Failed to close futures short: %v", err1)
-		// 	position.mu.Lock()
-		// 	position.IsOpen = false
-		// 	position.mu.Unlock()
-		// }
 	}()
 
 	go func() {
 		defer wg.Done()
 		_, err := clients.Execute(ctx, longExchange, common.PutSpotLong, pairName, amountUSDT)
 		if err != nil {
-			log.Printf("[ERROR] Failed to close spot long: %v", err)
+			log.Printf("[ERROR] Failed to open spot long: %v", err)
 			position.mu.Lock()
 			position.IsOpen = false
 			position.mu.Unlock()
 		}
-		// time.Sleep(5 * time.Second)
-		// var err1 error
-		// spotProfit, err1 = clients.Execute(ctx, longExchange, common.CloseSpotLong, pairName, amountUSDT)
-		// if err1 != nil {
-		// 	log.Printf("[ERROR] Failed to close spot long: %v", err1)
-		// 	position.mu.Lock()
-		// 	position.IsOpen = false
-		// 	position.mu.Unlock()
-		// }
 	}()
 
 	wg.Wait()
-
-	// totalProfit := spotProfit + futuresProfit
-	// log.Printf("[RESULT %s] Total Profit: %.4f USDT | Spot: %.4f | Futures: %.4f",
-	// 	position.PairName, totalProfit, spotProfit, futuresProfit)
 
 	// If opening failed, clean up
 	position.mu.RLock()

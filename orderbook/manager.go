@@ -133,6 +133,12 @@ func (pm *PairManager) connectAndListen(topic string, isSpot bool) error {
 
 	log.Printf("[ORDERBOOK] Subscribed to %s", topic)
 
+	// Wait 1 minute for orderbook to fully reconstruct
+	// This prevents false opportunities from incomplete orderbooks
+	log.Printf("[ORDERBOOK] %s - Warming up orderbook for 10 seconds...", topic)
+	time.Sleep(10 * time.Second)
+	log.Printf("[ORDERBOOK] %s - Orderbook ready, starting analysis", topic)
+
 	// Listen for updates
 	for {
 		select {

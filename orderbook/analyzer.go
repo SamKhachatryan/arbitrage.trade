@@ -1,6 +1,7 @@
 package orderbook
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"sync"
@@ -9,11 +10,22 @@ import (
 	"arbitrage.trade/clients/common"
 )
 
+// OpportunityCallback is called when a valid arbitrage opportunity is found
+type OpportunityCallback func(ctx context.Context, opp *Opportunity) bool
+
+// PriceUpdateCallback is called on each price update for position tracking
+type PriceUpdateCallback func(pairName string, shortExchange string, shortPrice float64, longExchange string, longPrice float64)
+
 // Analyzer performs arbitrage analysis on orderbook updates
 type Analyzer struct {
-	globalManager *GlobalManager
-	logFile       *os.File
-	logMu         sync.Mutex
+	globalManager       *GlobalManager
+	logFile             *os.File
+	logMu               sync.Mutex
+	executionCallback   OpportunityCallback
+	priceUpdateCallback PriceUpdateCallback
+	executionMu         sync.Mutex
+	isExecuting         bool
+	supportedExchanges  map[string]bool
 }
 
 // Opportunity represents a detected arbitrage opportunity
@@ -30,7 +42,7 @@ type Opportunity struct {
 }
 
 // NewAnalyzer creates a new orderbook analyzer
-func NewAnalyzer(gm *GlobalManager) *Analyzer {
+func NewAnalyzer(gm *GlobalManager, supportedExchanges map[string]bool) *Analyzer {
 	// Create/open log file for opportunities
 	logFile, err := os.OpenFile("opportunities.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
@@ -47,9 +59,20 @@ func NewAnalyzer(gm *GlobalManager) *Analyzer {
 	}
 
 	return &Analyzer{
-		globalManager: gm,
-		logFile:       logFile,
+		globalManager:      gm,
+		logFile:            logFile,
+		supportedExchanges: supportedExchanges,
 	}
+}
+
+// SetExecutionCallback sets the callback function to execute trades
+func (a *Analyzer) SetExecutionCallback(callback OpportunityCallback) {
+	a.executionCallback = callback
+}
+
+// SetPriceUpdateCallback sets the callback function for position tracking price updates
+func (a *Analyzer) SetPriceUpdateCallback(callback PriceUpdateCallback) {
+	a.priceUpdateCallback = callback
 }
 
 // Close closes the log file
@@ -69,11 +92,58 @@ func (a *Analyzer) AnalyzePair(pairName string) {
 
 	opportunity := a.analyzeSignal(pm)
 	if opportunity != nil {
+		// Check if both exchanges are supported
+		spotSupported := a.supportedExchanges[opportunity.SpotExchange]
+		perpSupported := a.supportedExchanges[opportunity.PerpExchange]
+
+		// Check if exchanges are different
+		differentExchanges := opportunity.SpotExchange != opportunity.PerpExchange
+
+		// Call price update callback for position tracking (if set)
+		if a.priceUpdateCallback != nil && spotSupported && perpSupported && differentExchanges {
+			a.priceUpdateCallback(pairName, opportunity.PerpExchange, opportunity.PerpBidPrice, opportunity.SpotExchange, opportunity.SpotAskPrice)
+		}
+
 		// Log all opportunities with spread >= 0.5%
 		if common.GreaterThanOrEqual(opportunity.SpreadPct, 0.5) {
 			a.logOpportunity(opportunity)
+
+			// Execute trade if both exchanges are supported, different, and spread >= 0.5%
+			if spotSupported && perpSupported && differentExchanges && common.GreaterThanOrEqual(opportunity.SpreadPct, 0.001) {
+				a.executeOpportunity(opportunity)
+			}
 		}
 	}
+}
+
+// executeOpportunity attempts to execute a trade for the given opportunity
+func (a *Analyzer) executeOpportunity(opp *Opportunity) {
+	// Check if already executing
+	a.executionMu.Lock()
+	if a.isExecuting {
+		a.executionMu.Unlock()
+		return
+	}
+	a.isExecuting = true
+	a.executionMu.Unlock()
+
+	// Call the execution callback if set
+	if a.executionCallback != nil {
+		ctx := context.Background()
+		success := a.executionCallback(ctx, opp)
+
+		if success {
+			// Position opened successfully, DO NOT EXIT - let position tracking close it
+			fmt.Println("✅ Trade opened successfully. Monitoring position for exit...")
+			// Keep running to allow position tracking to work
+			return
+		}
+	}
+
+	// Reset execution flag if trade didn't succeed
+	a.executionMu.Lock()
+	a.isExecuting = false
+	a.executionMu.Unlock()
 }
 
 // logOpportunity logs an opportunity to console and file with detailed information

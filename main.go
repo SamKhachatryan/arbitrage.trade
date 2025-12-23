@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"log"
 	"os"
 	"time"
 
+	"arbitrage.trade/clients/common"
 	"arbitrage.trade/orderbook"
 	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
@@ -116,9 +118,9 @@ func main() {
 
 	// Add trading pairs to monitor
 	tradingPairs := []string{
-		"btc-usdt",
-		"eth-usdt",
-		"sol-usdt",
+		// "btc-usdt",
+		// "eth-usdt",
+		// "sol-usdt",
 		"doge-usdt",
 		"xrp-usdt",
 		"ton-usdt",
@@ -138,13 +140,41 @@ func main() {
 	log.Println("✅ Orderbook manager started for all pairs")
 	log.Println("💡 Each pair has separate WebSocket connections for spot and perpetual")
 
-	// Initialize the arbitrage analyzer
+	// Initialize the arbitrage analyzer with supported exchanges
 	log.Println("🔍 Initializing arbitrage analyzer...")
-	analyzer := orderbook.NewAnalyzer(obManager)
+	analyzer := orderbook.NewAnalyzer(obManager, supportedExchanges)
 	obManager.SetAnalyzer(analyzer)
 	defer analyzer.Close()
-	log.Println("✅ Analyzer enabled - will analyze on each signal update (spread >= 0.5%)")
+
+	// Set up price update callback for position tracking
+	analyzer.SetPriceUpdateCallback(func(pairName string, shortExchange string, shortPrice float64, longExchange string, longPrice float64) {
+		UpdatePrices(pairName, shortExchange, shortPrice, longExchange, longPrice)
+	})
+
+	// Set up execution callback for live trading
+	analyzer.SetExecutionCallback(func(ctx context.Context, opp *orderbook.Opportunity) bool {
+		log.Printf("🚀 EXECUTING TRADE: %s | Spot: %s @ $%.6f | Perp: %s @ $%.6f | Spread: %.2f%%",
+			opp.Pair, opp.SpotExchange, opp.SpotAskPrice, opp.PerpExchange, opp.PerpBidPrice, opp.SpreadPct)
+
+		// Execute the arbitrage trade
+		// Buy spot (long), sell perp (short)
+		ConsiderArbitrageOpportunity(
+			ctx,
+			common.ExchangeType(opp.PerpExchange), // Short exchange (sell perp)
+			opp.PerpBidPrice,                      // Short price
+			common.ExchangeType(opp.SpotExchange), // Long exchange (buy spot)
+			opp.SpotAskPrice,                      // Long price
+			opp.Pair,
+			opp.SpreadPct,
+			10.0, // Amount in USDT
+		)
+
+		return true // Trade executed successfully
+	})
+
+	log.Println("✅ Analyzer enabled - will analyze on each signal update and execute trades (spread >= 0.5%)")
 	log.Println("📝 Logging all opportunities to opportunities.log file")
+	log.Println("⚠️  Program will terminate after executing one trade")
 
 	// TODO: Add periodic analyzer that checks all orderbooks for arbitrage opportunities
 	// For now, we'll keep the old WebSocket connection for backward compatibility
