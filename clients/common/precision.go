@@ -19,7 +19,7 @@ var PairPrecisions = map[string]PairPrecision{
 	"xrp-usdt":  {QuantityPrecision: 1, PricePrecision: 4}, // ~$2: 5.0 XRP = ~$10
 	"doge-usdt": {QuantityPrecision: 0, PricePrecision: 5}, // ~$0.17: 59 DOGE = ~$10
 	"ada-usdt":  {QuantityPrecision: 0, PricePrecision: 4}, // ~$0.70: 14 ADA = ~$10
-	"avax-usdt": {QuantityPrecision: 1, PricePrecision: 2}, // ~$25: 0.40 AVAX = ~$10
+	"avax-usdt": {QuantityPrecision: 0, PricePrecision: 2}, // ~$25: 0.40 AVAX = ~$10
 	"trx-usdt":  {QuantityPrecision: 0, PricePrecision: 5}, // ~$0.24: 42 TRX = ~$10
 	"ton-usdt":  {QuantityPrecision: 1, PricePrecision: 2}, // ~$3.50: 2.86 TON = ~$10
 
