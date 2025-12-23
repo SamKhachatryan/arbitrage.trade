@@ -21,7 +21,7 @@ var PairPrecisions = map[string]PairPrecision{
 	"ada-usdt":  {QuantityPrecision: 0, PricePrecision: 4}, // ~$0.70: 14 ADA = ~$10
 	"avax-usdt": {QuantityPrecision: 2, PricePrecision: 3}, // ~$25: 0.40 AVAX = ~$10
 	"trx-usdt":  {QuantityPrecision: 0, PricePrecision: 5}, // ~$0.24: 42 TRX = ~$10
-	"ton-usdt":  {QuantityPrecision: 2, PricePrecision: 3}, // ~$3.50: 2.86 TON = ~$10
+	"ton-usdt":  {QuantityPrecision: 1, PricePrecision: 3}, // ~$3.50: 2.86 TON = ~$10
 
 	// Mid-cap pairs
 	"link-usdt":  {QuantityPrecision: 2, PricePrecision: 3}, // ~$14: 0.71 LINK = ~$10
