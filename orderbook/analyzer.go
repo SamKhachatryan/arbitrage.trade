@@ -127,8 +127,8 @@ func (a *Analyzer) AnalyzePair(pairName string) {
 			a.priceUpdateCallback(pairName, opportunity.PerpExchange, opportunity.PerpBidPrice, opportunity.SpotExchange, opportunity.SpotAskPrice)
 		}
 
-		// Log all opportunities with spread >= 0.5%
-		if common.GreaterThanOrEqual(opportunity.SpreadPct, 0.00001) {
+		// Log all opportunities with spread >= 1%
+		if common.GreaterThanOrEqual(opportunity.SpreadPct, 1) {
 			a.logOpportunity(opportunity)
 
 			// Execute trade if both exchanges are supported, different, and spread >= 0.5%
