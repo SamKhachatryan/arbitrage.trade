@@ -132,9 +132,9 @@ func (a *Analyzer) AnalyzePair(pairName string) {
 			a.logOpportunity(opportunity)
 
 			// Execute trade if both exchanges are supported, different, and spread >= 0.5%
-			// if spotSupported && perpSupported && differentExchanges {
-			// 	a.executeOpportunity(opportunity)
-			// }
+			if spotSupported && perpSupported && differentExchanges {
+				a.executeOpportunity(opportunity)
+			}
 		}
 	}
 }
