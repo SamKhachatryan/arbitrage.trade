@@ -2,14 +2,12 @@ package orderbook
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
 	"time"
 
 	"arbitrage.trade/clients/common"
-	"github.com/redis/go-redis/v9"
 )
 
 // OpportunityCallback is called when a valid arbitrage opportunity is found
@@ -28,7 +26,6 @@ type Analyzer struct {
 	executionMu         sync.Mutex
 	isExecuting         bool
 	supportedExchanges  map[string]bool
-	redisClient         *redis.Client
 }
 
 // Opportunity represents a detected arbitrage opportunity
@@ -61,27 +58,10 @@ func NewAnalyzer(gm *GlobalManager, supportedExchanges map[string]bool) *Analyze
 		}
 	}
 
-	// Initialize Redis client
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "", // no password
-		DB:       0,  // default DB
-	})
-
-	// Test Redis connection
-	ctx := context.Background()
-	if err := redisClient.Ping(ctx).Err(); err != nil {
-		fmt.Printf("⚠️  Failed to connect to Redis: %v (opportunities will not be published)\n", err)
-		redisClient = nil
-	} else {
-		fmt.Println("✅ Connected to Redis - opportunities will be published to 'arbitrage-opportunity' topic")
-	}
-
 	return &Analyzer{
 		globalManager:      gm,
 		logFile:            logFile,
 		supportedExchanges: supportedExchanges,
-		redisClient:        redisClient,
 	}
 }
 
@@ -95,13 +75,10 @@ func (a *Analyzer) SetPriceUpdateCallback(callback PriceUpdateCallback) {
 	a.priceUpdateCallback = callback
 }
 
-// Close closes the log file and Redis connection
+// Close closes the log file
 func (a *Analyzer) Close() {
 	if a.logFile != nil {
 		a.logFile.Close()
-	}
-	if a.redisClient != nil {
-		a.redisClient.Close()
 	}
 }
 
@@ -127,14 +104,9 @@ func (a *Analyzer) AnalyzePair(pairName string) {
 			a.priceUpdateCallback(pairName, opportunity.PerpExchange, opportunity.PerpBidPrice, opportunity.SpotExchange, opportunity.SpotAskPrice)
 		}
 
-		// Log all opportunities with spread >= 1%
-		if common.GreaterThanOrEqual(opportunity.SpreadPct, 1) {
-			a.logOpportunity(opportunity)
-
-			// Execute trade if both exchanges are supported, different, and spread >= 0.5%
-			if spotSupported && perpSupported && differentExchanges {
-				a.executeOpportunity(opportunity)
-			}
+		// Execute trade if both exchanges are supported, different, and spread >= 1%
+		if spotSupported && perpSupported && differentExchanges && common.GreaterThanOrEqual(opportunity.SpreadPct, 1) {
+			a.executeOpportunity(opportunity)
 		}
 	}
 }
@@ -200,43 +172,6 @@ func (a *Analyzer) logOpportunity(opp *Opportunity) {
 		a.logMu.Lock()
 		a.logFile.WriteString(logMsg)
 		a.logMu.Unlock()
-	}
-
-	// Publish to Redis
-	if a.redisClient != nil {
-		go a.publishOpportunityToRedis(opp, estimatedProfit)
-	}
-}
-
-// publishOpportunityToRedis publishes opportunity to Redis pub/sub
-func (a *Analyzer) publishOpportunityToRedis(opp *Opportunity, estimatedProfit float64) {
-	ctx := context.Background()
-
-	// Create JSON payload
-	payload := map[string]interface{}{
-		"pair":             opp.Pair,
-		"spot_exchange":    opp.SpotExchange,
-		"spot_ask_price":   opp.SpotAskPrice,
-		"spot_ask_volume":  opp.SpotAskVolume,
-		"perp_exchange":    opp.PerpExchange,
-		"perp_bid_price":   opp.PerpBidPrice,
-		"perp_bid_volume":  opp.PerpBidVolume,
-		"spread_pct":       opp.SpreadPct,
-		"estimated_profit": estimatedProfit,
-		"timestamp":        opp.Timestamp.Format(time.RFC3339),
-	}
-
-	jsonData, err := json.Marshal(payload)
-	if err != nil {
-		fmt.Printf("⚠️  Failed to marshal opportunity to JSON: %v\n", err)
-		return
-	}
-
-	// Publish to Redis channel
-	if err := a.redisClient.Publish(ctx, "arbitrage-opportunity", jsonData).Err(); err != nil {
-		fmt.Printf("⚠️  Failed to publish to Redis: %v\n", err)
-	} else {
-		fmt.Println("published to redis")
 	}
 }
 

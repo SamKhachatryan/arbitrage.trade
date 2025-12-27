@@ -9,6 +9,7 @@ import (
 
 	"arbitrage.trade/clients"
 	"arbitrage.trade/clients/common"
+	"arbitrage.trade/redis"
 )
 
 type ArbitragePosition struct {
@@ -125,8 +126,26 @@ func closePosition(position *ArbitragePosition) {
 	wg.Wait()
 
 	totalProfit := spotProfit + futuresProfit
+	duration := time.Since(position.EntryTime).Seconds()
+
 	log.Printf("[💰 RESULT %s] Total Profit: %.4f USDT | Spot: %.4f | Futures: %.4f",
 		position.PairName, totalProfit, spotProfit, futuresProfit)
+
+	// Publish trade summary to Redis
+	redis.PublishTradeSummary(redis.TradeSummary{
+		Pair:            position.PairName,
+		SpotExchange:    string(position.LongExchange),
+		FuturesExchange: string(position.ShortExchange),
+		EntrySpread:     position.EntrySpread,
+		ExitSpread:      0, // Can calculate if we track exit prices
+		SpotProfit:      spotProfit,
+		FuturesProfit:   futuresProfit,
+		TotalProfit:     totalProfit,
+		Amount:          position.AmountUSDT,
+		Duration:        duration,
+		OpenTime:        position.EntryTime,
+		CloseTime:       time.Now(),
+	})
 
 	// Remove from active positions
 	positionsMutex.Lock()

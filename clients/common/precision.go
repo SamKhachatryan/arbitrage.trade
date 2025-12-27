@@ -19,7 +19,7 @@ var PairPrecisions = map[string]PairPrecision{
 	// Major Market Caps
 	"xrp-usdt":  {QuantityPrecision: 1, PricePrecision: 4},
 	"doge-usdt": {QuantityPrecision: 0, PricePrecision: 5}, // Consistent at 0 decimals for qty
-	"ada-usdt":  {QuantityPrecision: 1, PricePrecision: 4}, // Changed Qty to 1 for better $10 fill
+	"ada-usdt":  {QuantityPrecision: 0, PricePrecision: 4}, // Changed Qty to 1 for better $10 fill
 	"avax-usdt": {QuantityPrecision: 1, PricePrecision: 2}, // Safe at 1 across all 5 exchanges
 	"trx-usdt":  {QuantityPrecision: 0, PricePrecision: 5}, // TRX is high-supply, keep at 0
 	"ton-usdt":  {QuantityPrecision: 1, PricePrecision: 3}, // Increased PricePrecision to 3 for OKX/Gate

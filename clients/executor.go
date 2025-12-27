@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"arbitrage.trade/clients/binance"
 	"arbitrage.trade/clients/bitget"
@@ -13,6 +14,7 @@ import (
 	"arbitrage.trade/clients/gate"
 	"arbitrage.trade/clients/okx"
 	"arbitrage.trade/clients/whitebit"
+	"arbitrage.trade/redis"
 )
 
 var (
@@ -89,6 +91,23 @@ func Execute(ctx context.Context, exchange common.ExchangeType, command common.O
 		return 0.00, err
 	}
 
+	// Determine trade details for Redis publishing
+	var side, action string
+	switch command {
+	case common.PutSpotLong:
+		side = "spot_long"
+		action = "open"
+	case common.CloseSpotLong:
+		side = "spot_long"
+		action = "close"
+	case common.PutFuturesShort:
+		side = "futures_short"
+		action = "open"
+	case common.CloseFuturesShort:
+		side = "futures_short"
+		action = "close"
+	}
+
 	switch command {
 	case common.PutSpotLong:
 		_, err = client.PutSpotLong(ctx, pairName, amountUSDT)
@@ -106,6 +125,18 @@ func Execute(ctx context.Context, exchange common.ExchangeType, command common.O
 		fmt.Printf("[%s] |%s| - Failed: %s\n", exchange, command, err)
 	} else {
 		fmt.Printf("[%s] |%s| - Succeeded\n", exchange, command)
+
+		// Publish successful trade execution to Redis
+		redis.PublishTradeExecution(redis.TradeExecution{
+			Exchange:  string(exchange),
+			Pair:      pairName,
+			Side:      side,
+			Action:    action,
+			Amount:    amountUSDT,
+			Price:     0, // Price will be added from position context if needed
+			SpreadPct: 0, // Spread will be added from position context if needed
+			Timestamp: time.Now(),
+		})
 	}
 
 	return profit, err

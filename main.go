@@ -9,6 +9,7 @@ import (
 
 	"arbitrage.trade/clients/common"
 	"arbitrage.trade/orderbook"
+	"arbitrage.trade/redis"
 	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
 	"github.com/vmihailenco/msgpack/v5"
@@ -111,6 +112,12 @@ func main() {
 
 	// Use the same URL for both (backward compatibility)
 	wsURL = orderbookSignalURL
+
+	// Initialize Redis for trade notifications
+	if err := redis.InitRedis(); err != nil {
+		log.Println("⚠️  Redis unavailable - trade notifications disabled")
+	}
+	defer redis.CloseRedis()
 
 	// Initialize global orderbook manager
 	log.Println("📊 Initializing orderbook manager...")
