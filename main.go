@@ -173,7 +173,7 @@ func main() {
 			opp.SpotAskPrice,                      // Long price
 			opp.Pair,
 			opp.SpreadPct,
-			10.0, // Amount in USDT
+			20.0, // Amount in USDT
 		)
 
 		return true // Trade executed successfully
