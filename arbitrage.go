@@ -3,13 +3,18 @@ package main
 import (
 	"context"
 	"log"
-	"os"
 	"sync"
 	"time"
 
-	"arbitrage.trade/clients"
 	"arbitrage.trade/clients/common"
+	"arbitrage.trade/orderbook"
 	"arbitrage.trade/redis"
+)
+
+var (
+	activePositions = make(map[string]*ArbitragePosition)
+	positionsMutex  sync.RWMutex
+	globalAnalyzer  *orderbook.Analyzer // Reference to reset execution flag after trade closes
 )
 
 type ArbitragePosition struct {
@@ -25,11 +30,6 @@ type ArbitragePosition struct {
 	LastLogTime     time.Time // Track when we last logged to avoid spam
 	mu              sync.RWMutex
 }
-
-var (
-	activePositions = make(map[string]*ArbitragePosition)
-	positionsMutex  sync.RWMutex
-)
 
 // UpdatePrices is called from main WebSocket loop to track current prices
 func UpdatePrices(pairName string, shortExchange string, shortPrice float64, longExchange string, longPrice float64) {
@@ -68,7 +68,7 @@ func UpdatePrices(pairName string, shortExchange string, shortPrice float64, lon
 	// Exit conditions:
 	// 1. Spread has converged by 60% or more (profit target)
 	// 2. Spread has reversed (negative means prices crossed)
-	// 3. Maximum hold time of 120 seconds (safety exit)
+	// 3. Maximum hold time of 60 seconds (safety exit)
 	shouldClose := false
 	reason := ""
 
@@ -78,9 +78,10 @@ func UpdatePrices(pairName string, shortExchange string, shortPrice float64, lon
 	} else if currentSpread <= 0 {
 		shouldClose = true
 		reason = "Spread reversed (prices crossed)"
-	} else if elapsedTime >= 60 {
+	} else if elapsedTime >= 58 {
 		shouldClose = true
-		reason = "Max hold time reached (60s)"
+		reason = "Max hold time reached (58s+)"
+		log.Printf("[DEBUG] Triggering close: elapsedTime=%.2f >= 58", elapsedTime)
 	}
 
 	if shouldClose {
@@ -98,32 +99,67 @@ func closePosition(position *ArbitragePosition) {
 	position.IsOpen = false
 	position.mu.Unlock()
 
-	ctx := context.Background()
-	var wg sync.WaitGroup
-	wg.Add(2)
+	// TESTING: Simulate trade closes and Redis publishing
+	spotProfit := 0.15
+	futuresProfit := 0.12
 
-	spotProfit := 0.00
-	futuresProfit := 0.00
+	// Get simulated exit prices (slightly different from entry)
+	exitShortPrice := position.EntryShortPrice * 0.995 // 0.5% lower
+	exitLongPrice := position.EntryLongPrice * 1.005   // 0.5% higher
+	exitSpread := ((exitShortPrice - exitLongPrice) / exitLongPrice) * 100.0
 
-	go func() {
-		defer wg.Done()
-		var err error
-		futuresProfit, err = clients.Execute(ctx, position.ShortExchange, common.CloseFuturesShort, position.PairName, position.AmountUSDT)
-		if err != nil {
-			log.Printf("[ERROR] Failed to close futures short: %v", err)
-		}
-	}()
+	log.Printf("[SIMULATED] Closing futures short on %s", position.ShortExchange)
+	redis.PublishTradeExecution(redis.TradeExecution{
+		Exchange:  string(position.ShortExchange),
+		Pair:      position.PairName,
+		Side:      "futures_short",
+		Action:    "close",
+		Amount:    position.AmountUSDT,
+		Price:     exitShortPrice,
+		SpreadPct: exitSpread,
+		Timestamp: time.Now(),
+	})
 
-	go func() {
-		defer wg.Done()
-		var err error
-		spotProfit, err = clients.Execute(ctx, position.LongExchange, common.CloseSpotLong, position.PairName, position.AmountUSDT)
-		if err != nil {
-			log.Printf("[ERROR] Failed to close spot long: %v", err)
-		}
-	}()
+	log.Printf("[SIMULATED] Closing spot long on %s", position.LongExchange)
+	redis.PublishTradeExecution(redis.TradeExecution{
+		Exchange:  string(position.LongExchange),
+		Pair:      position.PairName,
+		Side:      "spot_long",
+		Action:    "close",
+		Amount:    position.AmountUSDT,
+		Price:     exitLongPrice,
+		SpreadPct: exitSpread,
+		Timestamp: time.Now(),
+	})
 
-	wg.Wait()
+	// TESTING: Actual trades disabled, execution commented out
+	/*
+		ctx := context.Background()
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			var err error
+			futuresProfit, err = clients.Execute(ctx, position.ShortExchange, common.CloseFuturesShort, position.PairName, position.AmountUSDT)
+			if err != nil {
+				log.Printf("[ERROR] Failed to close futures short: %v", err)
+			}
+		}()
+
+		go func() {
+			defer wg.Done()
+			var err error
+			spotProfit, err = clients.Execute(ctx, position.LongExchange, common.CloseSpotLong, position.PairName, position.AmountUSDT)
+			if err != nil {
+				log.Printf("[ERROR] Failed to close spot long: %v", err)
+			}
+		}()
+
+		wg.Wait()
+	*/
+
+	log.Printf("[SIMULATED] Trades closed (not executed, Redis testing mode)")
 
 	totalProfit := spotProfit + futuresProfit
 	duration := time.Since(position.EntryTime).Seconds()
@@ -137,7 +173,7 @@ func closePosition(position *ArbitragePosition) {
 		SpotExchange:    string(position.LongExchange),
 		FuturesExchange: string(position.ShortExchange),
 		EntrySpread:     position.EntrySpread,
-		ExitSpread:      0, // Can calculate if we track exit prices
+		ExitSpread:      exitSpread,
 		SpotProfit:      spotProfit,
 		FuturesProfit:   futuresProfit,
 		TotalProfit:     totalProfit,
@@ -152,16 +188,20 @@ func closePosition(position *ArbitragePosition) {
 	delete(activePositions, position.PairName)
 	positionsMutex.Unlock()
 
-	// Position closed, now exit the program
-	log.Println("✅ Position closed successfully. Program will terminate.")
-	time.Sleep(1 * time.Second)
-	os.Exit(0)
+	// Reset execution flag to allow next trade
+	if globalAnalyzer != nil {
+		globalAnalyzer.ResetExecutionFlag()
+	}
+
+	// Position closed successfully - ready for next trade
+	log.Printf("✅ Position closed successfully. Ready for next opportunity.")
 }
 
 func ConsiderArbitrageOpportunity(ctx context.Context, shortExchange common.ExchangeType, shortPrice float64, longExchange common.ExchangeType,
 	longPrice float64, pairName string, diffPercent float64, amountUSDT float64) {
 
-	if common.LessThan(diffPercent, 1) {
+	// TESTING: Reduced threshold to 0.0001% for Redis testing
+	if common.LessThan(diffPercent, 0.0001) {
 		return
 	}
 
@@ -196,32 +236,79 @@ func ConsiderArbitrageOpportunity(ctx context.Context, shortExchange common.Exch
 	activePositions[pairName] = position
 	positionsMutex.Unlock()
 
-	var wg sync.WaitGroup
-	wg.Add(2)
-
+	// Start a safety timer to force close after 65 seconds if UpdatePrices fails
 	go func() {
-		defer wg.Done()
-		_, err := clients.Execute(ctx, shortExchange, common.PutFuturesShort, pairName, amountUSDT)
-		if err != nil {
-			log.Printf("[ERROR] Failed to open futures short: %v", err)
-			position.mu.Lock()
-			position.IsOpen = false
-			position.mu.Unlock()
+		time.Sleep(65 * time.Second)
+		position.mu.RLock()
+		stillOpen := position.IsOpen
+		position.mu.RUnlock()
+
+		if stillOpen {
+			log.Printf("[FORCE CLOSE %s] Safety timer triggered - position held too long", pairName)
+			closePosition(position)
 		}
 	}()
 
-	go func() {
-		defer wg.Done()
-		_, err := clients.Execute(ctx, longExchange, common.PutSpotLong, pairName, amountUSDT)
-		if err != nil {
-			log.Printf("[ERROR] Failed to open spot long: %v", err)
-			position.mu.Lock()
-			position.IsOpen = false
-			position.mu.Unlock()
-		}
-	}()
+	// TESTING: Simulate trade execution and Redis publishing
+	log.Printf("[SIMULATED] Opening futures short on %s", shortExchange)
+	redis.PublishTradeExecution(redis.TradeExecution{
+		Exchange:  string(shortExchange),
+		Pair:      pairName,
+		Side:      "futures_short",
+		Action:    "open",
+		Amount:    amountUSDT,
+		Price:     shortPrice,
+		SpreadPct: diffPercent,
+		Timestamp: time.Now(),
+	})
 
-	wg.Wait()
+	log.Printf("[SIMULATED] Opening spot long on %s", longExchange)
+	redis.PublishTradeExecution(redis.TradeExecution{
+		Exchange:  string(longExchange),
+		Pair:      pairName,
+		Side:      "spot_long",
+		Action:    "open",
+		Amount:    amountUSDT,
+		Price:     longPrice,
+		SpreadPct: diffPercent,
+		Timestamp: time.Now(),
+	})
+
+	// TESTING: Trades disabled, actual execution commented out
+	/*
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			_, err := clients.Execute(ctx, shortExchange, common.PutFuturesShort, pairName, amountUSDT)
+			if err != nil {
+				log.Printf("[ERROR] Failed to open futures short: %v", err)
+				position.mu.Lock()
+				position.IsOpen = false
+				position.mu.Unlock()
+			}
+		}()
+
+		go func() {
+			defer wg.Done()
+			_, err := clients.Execute(ctx, longExchange, common.PutSpotLong, pairName, amountUSDT)
+			if err != nil {
+				log.Printf("[ERROR] Failed to open spot long: %v", err)
+				position.mu.Lock()
+				position.IsOpen = false
+				position.mu.Unlock()
+			}
+		}()
+
+		wg.Wait()
+	*/
+
+	// Simulate successful trade execution for Redis testing
+	log.Printf("[SIMULATED] Trades opened successfully (not executed, Redis testing mode)")
+
+	// Simulate successful trade execution for Redis testing
+	log.Printf("[SIMULATED] Trades opened successfully (not executed, Redis testing mode)")
 
 	// If opening failed, clean up
 	position.mu.RLock()

@@ -73,6 +73,7 @@ type TradeSummary struct {
 // PublishTradeExecution publishes a single trade execution to Redis
 func PublishTradeExecution(trade TradeExecution) {
 	if client == nil {
+		fmt.Println("⚠️  Redis client not initialized - skipping trade execution publish")
 		return
 	}
 
@@ -81,16 +82,24 @@ func PublishTradeExecution(trade TradeExecution) {
 
 	jsonData, err := json.Marshal(trade)
 	if err != nil {
+		fmt.Printf("❌ Failed to marshal trade execution: %v\n", err)
 		return
 	}
 
 	// Publish to trade-execution topic
-	client.Publish(ctx, "arbitrage-trade-execution", jsonData)
+	if err := client.Publish(ctx, "arbitrage-trade-execution", jsonData).Err(); err != nil {
+		fmt.Printf("❌ Failed to publish trade execution to Redis: %v\n", err)
+		return
+	}
+
+	fmt.Printf("📤 Published trade execution to Redis: %s %s %s on %s\n",
+		trade.Action, trade.Side, trade.Pair, trade.Exchange)
 }
 
 // PublishTradeSummary publishes the final P&L summary to Redis
 func PublishTradeSummary(summary TradeSummary) {
 	if client == nil {
+		fmt.Println("⚠️  Redis client not initialized - skipping trade summary publish")
 		return
 	}
 
@@ -99,11 +108,16 @@ func PublishTradeSummary(summary TradeSummary) {
 
 	jsonData, err := json.Marshal(summary)
 	if err != nil {
+		fmt.Printf("❌ Failed to marshal trade summary: %v\n", err)
 		return
 	}
 
 	// Publish to trade-summary topic
-	client.Publish(ctx, "arbitrage-trade-summary", jsonData)
+	if err := client.Publish(ctx, "arbitrage-trade-summary", jsonData).Err(); err != nil {
+		fmt.Printf("❌ Failed to publish trade summary to Redis: %v\n", err)
+		return
+	}
 
-	fmt.Printf("📤 Published trade summary to Redis: %.4f USDT profit\n", summary.TotalProfit)
+	fmt.Printf("📤 Published trade summary to Redis: %s - %.4f USDT profit\n",
+		summary.Pair, summary.TotalProfit)
 }

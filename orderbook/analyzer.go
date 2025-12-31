@@ -30,15 +30,16 @@ type Analyzer struct {
 
 // Opportunity represents a detected arbitrage opportunity
 type Opportunity struct {
-	Pair          string
-	SpotExchange  string
-	PerpExchange  string
-	SpotAskPrice  float64
-	SpotAskVolume float64
-	PerpBidPrice  float64
-	PerpBidVolume float64
-	SpreadPct     float64
-	Timestamp     time.Time
+	Pair            string
+	SpotExchange    string
+	PerpExchange    string
+	SpotAskPrice    float64
+	SpotAskVolume   float64
+	PerpBidPrice    float64
+	PerpBidVolume   float64
+	SpreadPct       float64
+	UsableVolumeUSD float64 // Minimum volume that can be used on both sides
+	Timestamp       time.Time
 }
 
 // NewAnalyzer creates a new orderbook analyzer
@@ -75,6 +76,15 @@ func (a *Analyzer) SetPriceUpdateCallback(callback PriceUpdateCallback) {
 	a.priceUpdateCallback = callback
 }
 
+// ResetExecutionFlag resets the execution flag to allow new trades
+// This should be called after a position is closed
+func (a *Analyzer) ResetExecutionFlag() {
+	a.executionMu.Lock()
+	a.isExecuting = false
+	a.executionMu.Unlock()
+	fmt.Println("🔓 Execution flag reset - ready for next trade")
+}
+
 // Close closes the log file
 func (a *Analyzer) Close() {
 	if a.logFile != nil {
@@ -104,8 +114,8 @@ func (a *Analyzer) AnalyzePair(pairName string) {
 			a.priceUpdateCallback(pairName, opportunity.PerpExchange, opportunity.PerpBidPrice, opportunity.SpotExchange, opportunity.SpotAskPrice)
 		}
 
-		// Execute trade if both exchanges are supported, different, and spread >= 1%
-		if spotSupported && perpSupported && differentExchanges && common.GreaterThanOrEqual(opportunity.SpreadPct, 1) {
+		// TESTING: Execute trade if both exchanges are supported, different, and spread >= 0.0001% (Redis testing)
+		if spotSupported && perpSupported && differentExchanges && common.GreaterThanOrEqual(opportunity.SpreadPct, 0.0001) {
 			a.executeOpportunity(opportunity)
 		}
 	}
@@ -143,15 +153,14 @@ func (a *Analyzer) executeOpportunity(opp *Opportunity) {
 
 // logOpportunity logs an opportunity to console and file with detailed information
 func (a *Analyzer) logOpportunity(opp *Opportunity) {
-	// Calculate potential profit on $10 notional
-	notional := 10.0
+	// Calculate potential profit on the usable volume
 	profitPerUnit := opp.PerpBidPrice - opp.SpotAskPrice
 	profitPct := (profitPerUnit / opp.SpotAskPrice) * 100.0
-	estimatedProfit := notional * (profitPct / 100.0)
+	estimatedProfit := opp.UsableVolumeUSD * (profitPct / 100.0)
 
 	// Format log message with comprehensive info
 	timestamp := time.Now().Format("2006-01-02 15:04:05.000")
-	logMsg := fmt.Sprintf("[%s] %s | Spot: %s @ $%.8f (vol: %.4f) | Perp: %s @ $%.8f (vol: %.4f) | Spread: %.5f%% | Profit: $%.6f (on $10)\n",
+	logMsg := fmt.Sprintf("[%s] %s | Spot: %s @ $%.8f (vol: %.4f) | Perp: %s @ $%.8f (vol: %.4f) | Spread: %.5f%% | Usable: $%.2f | Profit: $%.6f\n",
 		timestamp,
 		opp.Pair,
 		opp.SpotExchange,
@@ -161,6 +170,7 @@ func (a *Analyzer) logOpportunity(opp *Opportunity) {
 		opp.PerpBidPrice,
 		opp.PerpBidVolume,
 		opp.SpreadPct,
+		opp.UsableVolumeUSD,
 		estimatedProfit,
 	)
 
@@ -219,6 +229,8 @@ func (a *Analyzer) analyzeSignal(pm *PairManager) *Opportunity {
 			continue
 		}
 
+		// spotAskVol is already in USDT (quantity × price)
+
 		// Compare against all perp exchanges
 		for _, perpExchange := range perpExchanges {
 			// Skip if same exchange (avoid self-comparison)
@@ -236,27 +248,60 @@ func (a *Analyzer) analyzeSignal(pm *PairManager) *Opportunity {
 				continue
 			}
 
-			// Check minimum notional USD (using 10 USD as in JS)
-			notionalUSD := 10.0
+			// perpBidVol is already in USDT (quantity × price)
 
-			// Check if both sides have sufficient volume
-			spotCovers := common.GreaterThanOrEqual(spotAskVol, notionalUSD)
-			perpCovers := common.GreaterThanOrEqual(perpBidVol, notionalUSD)
+			// Target notional USD (what we want to trade)
+			targetNotionalUSD := 20.0
+
+			// Check minimum achievable volume on each side based on quantity precision
+			spotMinAchievable := common.CalculateMinAchievableVolume(spotBestAsk, pm.pairName)
+			perpMinAchievable := common.CalculateMinAchievableVolume(perpBestBid, pm.pairName)
+
+			// Take the minimum volume between:
+			// 1. What orderbook offers on spot side (already in USDT)
+			// 2. What orderbook offers on perp side (already in USDT)
+			// 3. Our target notional
+			minVolume := spotAskVol
+			if common.LessThan(perpBidVol, minVolume) {
+				minVolume = perpBidVol
+			}
+			if common.LessThan(targetNotionalUSD, minVolume) {
+				minVolume = targetNotionalUSD
+			}
+
+			// Check if minimum volume is achievable with quantity precision on BOTH sides
+			// If volume < target AND either side can't achieve it, skip this opportunity
+			if common.LessThan(minVolume, targetNotionalUSD) {
+				// Volume is less than target - check if it's at least achievable
+				spotCanAchieve := common.CanAchieveVolume(minVolume, spotBestAsk, pm.pairName)
+				perpCanAchieve := common.CanAchieveVolume(minVolume, perpBestBid, pm.pairName)
+
+				if !spotCanAchieve || !perpCanAchieve {
+					// Can't achieve even the available volume with precision - skip
+					continue
+				}
+			}
+
+			// Also ensure both sides can at least achieve their minimum
+			if common.LessThan(spotAskVol, spotMinAchievable) || common.LessThan(perpBidVol, perpMinAchievable) {
+				continue
+			}
 
 			// Check if arbitrage exists: perp bid > spot ask
-			if common.GreaterThan(perpBestBid, spotBestAsk) && spotCovers && perpCovers {
+			if common.GreaterThan(perpBestBid, spotBestAsk) {
 				spreadPct := ((perpBestBid - spotBestAsk) / spotBestAsk) * 100.0
 
 				return &Opportunity{
-					Pair:          pm.pairName,
-					SpotExchange:  spotExchange,
-					PerpExchange:  perpExchange,
-					SpotAskPrice:  spotBestAsk,
-					SpotAskVolume: spotAskVol,
-					PerpBidPrice:  perpBestBid,
-					PerpBidVolume: perpBidVol,
-					SpreadPct:     spreadPct,
-					Timestamp:     time.Now(),
+					Pair:            pm.pairName,
+					SpotExchange:    spotExchange,
+					PerpExchange:    perpExchange,
+					SpotAskPrice:    spotBestAsk,
+					SpotAskVolume:   spotAskVol,
+					PerpBidPrice:    perpBestBid,
+					PerpBidVolume:   perpBidVol,
+					SpreadPct:       spreadPct,
+					UsableVolumeUSD: minVolume, // This is the synchronized volume to use
+					Timestamp:       time.Now(),
 				}
 			}
 		}

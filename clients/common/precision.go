@@ -74,3 +74,21 @@ func RoundQuantity(qty float64, pairName string) float64 {
 	multiplier := math.Pow(10, float64(prec.QuantityPrecision))
 	return math.Floor(qty*multiplier) / multiplier
 }
+
+// CalculateMinAchievableVolume calculates the minimum USDT volume achievable
+// with the given quantity precision at the specified price.
+// Example: For AVAX at $40 with qty precision 0:
+//   - Minimum quantity = 1 AVAX
+//   - Minimum volume = 1 * $40 = $40
+func CalculateMinAchievableVolume(price float64, pairName string) float64 {
+	prec := GetPrecision(pairName)
+	minQuantity := 1.0 / math.Pow(10, float64(prec.QuantityPrecision))
+	return minQuantity * price
+}
+
+// CanAchieveVolume checks if a target USDT volume can be achieved
+// with the given quantity precision at the specified price.
+func CanAchieveVolume(targetVolume float64, price float64, pairName string) bool {
+	minAchievable := CalculateMinAchievableVolume(price, pairName)
+	return targetVolume >= minAchievable
+}

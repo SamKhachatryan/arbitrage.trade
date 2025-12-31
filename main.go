@@ -153,6 +153,9 @@ func main() {
 	obManager.SetAnalyzer(analyzer)
 	defer analyzer.Close()
 
+	// Set global analyzer reference for resetting execution flag after trades
+	globalAnalyzer = analyzer
+
 	// Set up price update callback for position tracking
 	analyzer.SetPriceUpdateCallback(func(pairName string, shortExchange string, shortPrice float64, longExchange string, longPrice float64) {
 		UpdatePrices(pairName, shortExchange, shortPrice, longExchange, longPrice)
@@ -160,8 +163,8 @@ func main() {
 
 	// Set up execution callback for live trading
 	analyzer.SetExecutionCallback(func(ctx context.Context, opp *orderbook.Opportunity) bool {
-		log.Printf("🚀 EXECUTING TRADE: %s | Spot: %s @ $%.6f | Perp: %s @ $%.6f | Spread: %.2f%%",
-			opp.Pair, opp.SpotExchange, opp.SpotAskPrice, opp.PerpExchange, opp.PerpBidPrice, opp.SpreadPct)
+		log.Printf("🚀 EXECUTING TRADE: %s | Spot: %s @ $%.6f | Perp: %s @ $%.6f | Spread: %.2f%% | Volume: $%.2f",
+			opp.Pair, opp.SpotExchange, opp.SpotAskPrice, opp.PerpExchange, opp.PerpBidPrice, opp.SpreadPct, opp.UsableVolumeUSD)
 
 		// Execute the arbitrage trade
 		// Buy spot (long), sell perp (short)
@@ -173,7 +176,7 @@ func main() {
 			opp.SpotAskPrice,                      // Long price
 			opp.Pair,
 			opp.SpreadPct,
-			20.0, // Amount in USDT
+			opp.UsableVolumeUSD, // Use the synchronized volume from orderbook analysis
 		)
 
 		return true // Trade executed successfully
