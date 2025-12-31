@@ -114,8 +114,8 @@ func (a *Analyzer) AnalyzePair(pairName string) {
 			a.priceUpdateCallback(pairName, opportunity.PerpExchange, opportunity.PerpBidPrice, opportunity.SpotExchange, opportunity.SpotAskPrice)
 		}
 
-		// TESTING: Execute trade if both exchanges are supported, different, and spread >= 0.0001% (Redis testing)
-		if spotSupported && perpSupported && differentExchanges && common.GreaterThanOrEqual(opportunity.SpreadPct, 0.0001) {
+		// Execute trade if both exchanges are supported, different, and spread >= 1%
+		if spotSupported && perpSupported && differentExchanges && common.GreaterThanOrEqual(opportunity.SpreadPct, 1) {
 			a.executeOpportunity(opportunity)
 		}
 	}
