@@ -128,13 +128,14 @@ func main() {
 		// "btc-usdt",
 		// "eth-usdt",
 		// "sol-usdt",
-		"doge-usdt",
+		// "doge-usdt",
 		"xrp-usdt",
 		"ton-usdt",
 		"ada-usdt",
 		// "bnb-usdt",
 		"trx-usdt",
 		"avax-usdt",
+		"mon-usdt",
 	}
 
 	for _, pair := range tradingPairs {
