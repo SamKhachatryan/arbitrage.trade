@@ -135,7 +135,7 @@ func main() {
 		// "bnb-usdt",
 		"trx-usdt",
 		"avax-usdt",
-		"mon-usdt",
+		// "mon-usdt",
 	}
 
 	for _, pair := range tradingPairs {
