@@ -115,7 +115,7 @@ func (a *Analyzer) AnalyzePair(pairName string) {
 		}
 
 		// Execute trade if both exchanges are supported, different, and spread >= 1%
-		if spotSupported && perpSupported && differentExchanges && common.GreaterThanOrEqual(opportunity.SpreadPct, 1) {
+		if spotSupported && perpSupported && differentExchanges && common.GreaterThanOrEqual(opportunity.SpreadPct, 1.5) {
 			a.executeOpportunity(opportunity)
 		}
 	}

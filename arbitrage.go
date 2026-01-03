@@ -166,7 +166,7 @@ func closePosition(position *ArbitragePosition) {
 func ConsiderArbitrageOpportunity(ctx context.Context, shortExchange common.ExchangeType, shortPrice float64, longExchange common.ExchangeType,
 	longPrice float64, pairName string, diffPercent float64, amountUSDT float64) {
 
-	if common.LessThan(diffPercent, 1) {
+	if common.LessThan(diffPercent, 1.5) {
 		return
 	}
 

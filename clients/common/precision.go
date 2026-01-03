@@ -49,7 +49,7 @@ var PairPrecisions = map[string]PairPrecision{
 	"gala-usdt":  {QuantityPrecision: 0, PricePrecision: 5}, // Reduced Price to 5 (Binance max varies)
 	"blur-usdt":  {QuantityPrecision: 0, PricePrecision: 4},
 	"wojak-usdt": {QuantityPrecision: 0, PricePrecision: 6},
-	"mon-usdt":   {QuantityPrecision: 1, PricePrecision: 4},
+	"mon-usdt":   {QuantityPrecision: 0, PricePrecision: 4},
 }
 
 func GetPrecision(pairName string) PairPrecision {
